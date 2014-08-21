@@ -3,17 +3,19 @@ import Base: return_type, show, writemime, size, strides, isassigned, getindex, 
 
 abstract AbstractGenerator{T,N} <: DenseArray{T,N}
 
-immutable Generator{T,N,IS} <: AbstractGenerator{T,N}
+immutable Generator{T,N,IS,F} <: AbstractGenerator{T,N}
     name::UTF8String
-    func::Function # Must return values of type T
+    func::F # Must return values of type T
     itrs::IS
 end
 
 Generator(name, func, itrs) = Generator(name, func, itrs, map(eltype, itrs))
-function Generator{I<:Tuple}(name::String, func::Function, itrs::I, arg_types)
+function Generator{I<:Tuple}(name::String, func::DataType, itrs::I, arg_types)
     T = return_type(func, arg_types)
-    Generator{T,length(I),I}(name, func, itrs)
+    Generator{T,length(I),I,Type{func}}(name, func, itrs)
 end
+
+const _CACHEDFUNCS = Dict{(NTuple{TypeVar(:N), Symbol},Union(Symbol,Expr)), Symbol}()
 
 macro generator(thunk, assignments...)
     args = map(e->e.args[1], assignments)
@@ -26,8 +28,15 @@ macro generator(thunk, assignments...)
     # 2. Combine with arg symbols: (sym1::eltype(itr1), sym2::eltype(itr2), ...)
     typed_args = map((sym,typ) -> Expr(symbol("::"), sym, typ), args, type_exprs)
     # 3. And create the anonymous func (with the args in a tuple expression)
-    #func = Expr(symbol("->"), Expr(:tuple, typed_args...), Expr(:block, thunk))
-    func = Expr(symbol("->"), Expr(:tuple, args...), Expr(:block, thunk))
+    func = get!(_CACHEDFUNCS, (args, thunk)) do
+        func = gensym()
+        @eval type $func
+            $(Expr(:call, func, args...)) = begin
+                $thunk
+            end
+        end
+        func
+    end
     # 4. Finally, return the top-level Generator call
     esc(Expr(:call, :Generator, name, func, Expr(:tuple, itrs...), Expr(:tuple, type_exprs...)))
 end
