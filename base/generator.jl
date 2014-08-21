@@ -79,6 +79,16 @@ getindex{T,I}(g::Generator{T,1,I}, i1::Real)                               = g.f
 getindex{T,I}(g::Generator{T,2,I}, i1::Real, i2::Real)                     = g.func(g.itrs[1][i1], g.itrs[2][i2])::T
 getindex{T,I}(g::Generator{T,3,I}, i1::Real, i2::Real, i3::Real)           = g.func(g.itrs[1][i1], g.itrs[2][i2], g.itrs[3][i3])::T
 getindex{T,I}(g::Generator{T,4,I}, i1::Real, i2::Real, i3::Real, i4::Real) = g.func(g.itrs[1][i1], g.itrs[2][i2], g.itrs[3][i3], g.itrs[4][i4])::T
+# Linear indexing
+getindex{T,I}(g::Generator{T,2,I}, i::Real) = (d1 = length(g.itrs[1]); g.func(g.itrs[1][rem(i-1, d1)+1],g.itrs[2][div(i-1, d1)+1])::T)
+function getindex{T,I}(g::Generator{T,3,I}, i::Real)
+    d1 = length(g.itrs[1])
+    d2 = length(g.itrs[2])
+    d3 = length(g.itrs[3])
+    g.func(g.itrs[1][rem(i-1,d1)+1],
+           g.itrs[2][div(rem(i-1,d1*d2), d1)+1],
+           g.itrs[3][div(rem(i-1,d1*d2*d3), d1*d2)+1])::T
+end
 
 # Some potential convenient uses of generators
 ntuple(g::AbstractGenerator) = ntuple(length(g), i -> g[i])
