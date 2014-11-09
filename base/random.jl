@@ -26,11 +26,11 @@ end
 
 ## Low level API for MersenneTwister
 
-@inline mt_avail(r::MersenneTwister) = MTCacheLength - r.idx
-@inline mt_empty(r::MersenneTwister) = r.idx == MTCacheLength
-@inline mt_setfull!(r::MersenneTwister) = r.idx = 0
-@inline mt_setempty!(r::MersenneTwister) = r.idx = MTCacheLength
-@inline mt_pop!(r::MersenneTwister) = @inbounds return r.vals[r.idx+=1]
+@inline mt_avail(r::MersenneTwister) = r.idx
+@inline mt_empty(r::MersenneTwister) = r.idx == 0
+@inline mt_setfull!(r::MersenneTwister) = r.idx = MTCacheLength
+@inline mt_setempty!(r::MersenneTwister) = r.idx = 0
+@inline mt_pop!(r::MersenneTwister) = (@inbounds f = r.vals[r.idx]; r.idx-=1; f)
 
 function gen_rand(r::MersenneTwister)
     dsfmt_fill_array_close1_open2!(r.state, r.vals, length(r.vals))
