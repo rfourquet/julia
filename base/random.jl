@@ -24,15 +24,23 @@ end
 
 ## Low level API for MersenneTwister
 
+@inline mt_avail(r::MersenneTwister) = r.idx
+@inline mt_empty(r::MersenneTwister) = r.idx == 0
+@inline mt_setfull!(r::MersenneTwister) = r.idx = length(r.vals)
+@inline mt_setempty!(r::MersenneTwister) = r.idx = 0
+@inline mt_get(r::MersenneTwister) = @inbounds return r.vals[r.idx]
+@inline mt_rm1!(r::MersenneTwister) = r.idx -= 1
+@inline mt_pop!(r::MersenneTwister) = (f = mt_get(r); mt_rm1!(r); f)
+
 function gen_rand(r::MersenneTwister)
     dsfmt_fill_array_close1_open2!(r.state, r.vals, length(r.vals))
-    r.idx = 0
+    mt_setfull!(r)
 end
 
-@inline gen_rand_maybe(r::MersenneTwister) = r.idx == length(r.vals) && gen_rand(r)
+@inline gen_rand_maybe(r::MersenneTwister) = mt_empty(r) && gen_rand(r)
 
-# precondition: r.idx < length(r.vals)
-@inline rand_close1_open2_inbounds(r::MersenneTwister) =  (r.idx += 1; @inbounds return r.vals[r.idx])
+# precondition: !mt_empty(r)
+@inline rand_close1_open2_inbounds(r::MersenneTwister) = mt_pop!(r)
 @inline rand_inbounds(r::MersenneTwister) = rand_close1_open2_inbounds(r) - 1.0
 
 # produce Float64 values
@@ -46,7 +54,7 @@ end
 function srand(r::MersenneTwister, seed::Vector{UInt32})
     r.seed = seed
     dsfmt_init_by_array(r.state, r.seed)
-    r.idx = length(r.vals)
+    mt_setempty!(r)
     return r
 end
 
@@ -189,10 +197,10 @@ function rand_AbstractArray_Float64!(r::MersenneTwister, A::AbstractArray{Float6
     # end
     m = 0
     while m < n
-        s = length(r.vals) - r.idx
+        s = mt_avail(r)
         if s == 0
             gen_rand(r)
-            s = length(r.vals)
+            s = mt_avail(r)
         end
         m2 = min(n, m+s)
         for i=m+1:m2
