@@ -16,13 +16,31 @@ const MTCacheLength = dsfmt_get_min_array_size()
 type MersenneTwister <: AbstractRNG
     state::DSFMT_state
     vals::Vector{Float64}
+
+    A128::Vector{UInt128}
+    A64::Vector{UInt64}
+    A32::Vector{UInt32}
+    A16::Vector{UInt16}
+    A8::Vector{UInt8}
+    bits::UInt128
+
     idx::Int
+    i128::Int
+    i64::Int
+    i32::Int
+    i16::Int
+    i8::Int
+    i1::Int
+
     seed::Vector{UInt32}
 
-    bits::UInt128
-    bidx::Int
-
-    MersenneTwister(seed) = srand(new(DSFMT_state(), Array(Float64, MTCacheLength)),
+    MersenneTwister(seed) = srand(new(DSFMT_state(),
+                                      Array(Float64, MTCacheLength),
+                                      Array(UInt128, 5),
+                                      Array(UInt64, 10),
+                                      Array(UInt32, 20),
+                                      Array(UInt16, 40),
+                                      Array(UInt8, 80)),
                                   seed)
     MersenneTwister() = MersenneTwister(0)
 end
@@ -72,6 +90,7 @@ function randbit64_raw(r::MersenneTwister, i::Int)
     r.bidx < 76 && randbit_push52!(r)
     bits = r.bits % UInt64
     r.bits >>= i
+    r.bidx -= i
     bits
 end
 
@@ -81,6 +100,7 @@ function randbit1_raw(r::MersenneTwister, T::Type)
     r.bidx == 0 && randbit_push52!(r)
     bits = r.bits % T
     r.bits >>= 1
+    r.bidx -= 1
     bits
 end
 
@@ -90,6 +110,7 @@ function srand(r::MersenneTwister, seed::Vector{UInt32})
     r.seed = seed
     dsfmt_init_by_array(r.state, r.seed)
     mt_setempty!(r)
+    r.i128 = r.i64 = r.i32 = r.i16 = r.i8 = r.i1 = 0
     return r
 end
 
@@ -187,6 +208,32 @@ rand(r::MersenneTwister, ::Type{Float64}) = rand(r, CloseOpen)
 rand{T<:Union(Float16, Float32)}(r::MersenneTwister, ::Type{T}) = convert(T, rand(r, Float64))
 
 ## random integers (MersenneTwister)
+
+@inline mt_A(r::MersenneTwister, ::Type{UInt128}) = r.A128
+@inline mt_A(r::MersenneTwister, ::Type{UInt64}) = r.A64
+@inline mt_A(r::MersenneTwister, ::Type{UInt32}) = r.A32
+@inline mt_A(r::MersenneTwister, ::Type{UInt16}) = r.A16
+@inline mt_A(r::MersenneTwister, ::Type{UInt8}) = r.A8
+
+@inline mt_idx(r::MersenneTwister, ::Type{UInt128}) = r.i128
+@inline mt_idx(r::MersenneTwister, ::Type{UInt64}) = r.i64
+@inline mt_idx(r::MersenneTwister, ::Type{UInt32}) = r.i32
+@inline mt_idx(r::MersenneTwister, ::Type{UInt16}) = r.i16
+@inline mt_idx(r::MersenneTwister, ::Type{UInt8}) = r.i8
+
+@inline mt_residx(r::MersenneTwister, ::Type{UInt128}) = r.i128
+@inline mt_idx(r::MersenneTwister, ::Type{UInt64}) = r.i64
+@inline mt_idx(r::MersenneTwister, ::Type{UInt32}) = r.i32
+@inline mt_idx(r::MersenneTwister, ::Type{UInt16}) = r.i16
+@inline mt_idx(r::MersenneTwister, ::Type{UInt8}) = r.i8
+
+function mt_gen(r::MersenneTwister, T::Type)
+    rand!(r, mt_A(r, T))
+    mt_idx(r, T) =
+end
+
+function rand{T<:Union(UInt8, Int8, UInt16, Int16)}(r::MersenneTwister, ::Type{T})
+    mt_idx(r, T) == 0 &&
 
 rand(r::MersenneTwister, ::Type{UInt8})   = rand(r, UInt32) % UInt8
 rand(r::MersenneTwister, ::Type{UInt16})  = rand(r, UInt32) % UInt16
