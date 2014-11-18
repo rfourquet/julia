@@ -19,6 +19,9 @@ type MersenneTwister <: AbstractRNG
     idx::Int
     seed::Vector{UInt32}
 
+    bits::UInt128
+    bidx::Int
+
     MersenneTwister(seed) = srand(new(DSFMT_state(), Array(Float64, MTCacheLength)),
                                   seed)
     MersenneTwister() = MersenneTwister(0)
@@ -56,6 +59,32 @@ type Close1Open2 <: FloatInterval end
 
 @inline rand_ui52_raw(r::MersenneTwister) = reinterpret(UInt64, rand(r, Close1Open2))
 @inline rand_ui2x52_raw(r::MersenneTwister) = (((rand_ui52_raw(r) % UInt128) << 64) | rand_ui52_raw(r))
+
+@inline function randbit_push52!(r::MersenneTwister)
+    r.bits $= rand_ui52_raw(r) % UInt128 << r.bidx
+    r.bidx += 52
+end
+
+randbit64_init(r::MersenneTwister) = r.bidx < 12 && randbit_push52!(r)
+
+function randbit64_raw(r::MersenneTwister, i::Int)
+    # precondition: r.idx >= 12
+    r.bidx < 76 && randbit_push52!(r)
+    bits = r.bits % UInt64
+    r.bits >>= i
+    bits
+end
+
+@inline randbit64(r::MersenneTwister, i::Int) = randbit64_raw(r, i) & ((one(UInt64)<<i) - 1)
+
+function randbit1_raw(r::MersenneTwister, T::Type)
+    r.bidx == 0 && randbit_push52!(r)
+    bits = r.bits % T
+    r.bits >>= 1
+    bits
+end
+
+@inline randbit1(r::MersenneTwister, T::Type) = randbit1_raw(r, T) & one(T)
 
 function srand(r::MersenneTwister, seed::Vector{UInt32})
     r.seed = seed
@@ -401,7 +430,7 @@ randbool(r::AbstractRNG, dims::Int...) = rand!(r, BitArray(dims))
 randbool(dims::Dims)   = rand!(BitArray(dims))
 randbool(dims::Int...) = rand!(BitArray(dims))
 
-randbool(r::MersenneTwister=GLOBAL_RNG) = ((rand(r, UInt32) & 1) == 1)
+randbool(r::MersenneTwister=GLOBAL_RNG) = randbit1_raw(r, Bool)
 
 rand(r::MersenneTwister, ::Type{Bool}) = randbool(r)
 
