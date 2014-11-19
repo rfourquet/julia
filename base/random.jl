@@ -334,83 +334,67 @@ function rand!{T<:Union(Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64
     A
 end
 
-## Generate random integer within a range
+## Generate random integer within a range 0:n
 
-# remainder function according to Knuth, where rem_knuth(a, 0) = a
-rem_knuth(a::UInt, b::UInt) = a % (b + (b == 0)) + a * (b == 0)
-rem_knuth{T<:Unsigned}(a::T, b::T) = b != 0 ? a % b : a
+# maxmultiple: precondition: k>0
 
-# maximum multiple of k <= 2^bits(T) decremented by one,
-# that is 0xFFFFFFFF if k = typemax(T) - typemin(T) with intentional underflow
-maxmultiple(k::UInt32) = (div(0x0000000100000000,k + (k == 0))*k - 1) % UInt32
-maxmultiple(k::UInt64) = (div(0x00000000000000010000000000000000, k + (k == 0))*k - 1) % UInt64
-# maximum multiple of k within 1:typemax(UInt128)
-maxmultiple(k::UInt128) = div(typemax(UInt128), k + (k == 0))*k - 1
-# maximum multiple of k within 1:2^32 or 1:2^64, depending on size
-maxmultiplemix(k::UInt64) = (div((k >> 32 != 0)*0x0000000000000000FFFFFFFF00000000 + 0x0000000100000000, k + (k == 0))*k - 1) % UInt64
+# maximum multiple of k <= typemax(k)+1, decremented by one
+maxmultiple(k::UInt32) = (div(0x0000000100000000, k)*k - 1) % UInt32
 
-immutable RandIntGen{T<:Integer, U<:Unsigned}
-    a::T   # first element of the range
+maxmultiple_64(k::UInt64) = (div(0x00000000000000010000000000000000, k)*k - 1) % UInt64
+# 32 or 64 bits version depending on size
+maxmultiple(k::UInt64) = k >> 32 == 0 ? UInt64(maxmultiple(k % UInt32)) : maxmultiple_64(k)
+
+# maximum multiple of k <= typemax(UInt128), decremented by one
+maxmultiple(k::UInt128) = div(typemax(UInt128), k)*k - 1
+
+immutable RandIntGen{U<:Union(UInt32, UInt64, UInt128)}
     k::U   # range length or zero for full range
     u::U   # rejection threshold
+
+    RandIntGen(k::U) = new(k, k == zero(U) ? typemax(U) : maxmultiple(k))
 end
-# generators with 32, 128 bits entropy
-RandIntGen{T, U<:Union(UInt32, UInt128)}(a::T, k::U) = RandIntGen{T, U}(a, k, maxmultiple(k))
-# mixed 32/64 bits entropy generator
-RandIntGen{T}(a::T, k::UInt64) = RandIntGen{T,UInt64}(a, k, maxmultiplemix(k))
 
+# generator API for ranges
+# inrange(n) returns a helper object for generating random integers in the range 0:n
+inrange{U<:Union(UInt32,UInt64,UInt128)}(n::U) = RandIntGen{U}(one(U)+n)
 
-# generator for ranges
-RandIntGen{T<:Unsigned}(r::UnitRange{T}) = isempty(r) ? error("range must be non-empty") : RandIntGen(first(r), last(r) - first(r) + one(T))
-
-# specialized versions
-for (T, U) in [(UInt8, UInt32), (UInt16, UInt32),
-               (Int8, UInt32), (Int16, UInt32), (Int32, UInt32), (Int64, UInt64), (Int128, UInt128),
-               (Bool, UInt32)]
-
-    @eval RandIntGen(r::UnitRange{$T}) = isempty(r) ? error("range must be non-empty") : RandIntGen(first(r), convert($U, unsigned(last(r) - first(r)) + one($U))) # overflow ok
+@inline function rand_lessthan{U}(mt::MersenneTwister, u::U)
+    while true
+        x = rand(mt, U)
+        x <= u && return x
+    end
 end
 
 # this function uses 32 bit entropy for small ranges of length <= typemax(UInt32) + 1
 # RandIntGen is responsible for providing the right value of k
-function rand{T<:Union(UInt64, Int64)}(mt::MersenneTwister, g::RandIntGen{T,UInt64})
-    local x::UInt64
-    if (g.k - 1) >> 32 == 0
-        x = rand(mt, UInt32)
-        while x > g.u
-            x = rand(mt, UInt32)
-        end
-    else
-        x = rand(mt, UInt64)
-        while x > g.u
-            x = rand(mt, UInt64)
-        end
-    end
-    return reinterpret(T, reinterpret(UInt64, g.a) + rem_knuth(x, g.k))
+
+function rand(mt::MersenneTwister, g::RandIntGen{UInt64})
+    g.k == zero(UInt64) && return rand(mt, Uint64)
+    x = (g.k - 1) >> 32 == 0 ?
+            UInt64(rand_lessthan(mt, g.u % UInt32)) :
+            rand_lessthan(mt, g.u)
+    return x % g.k
 end
 
-function rand{T<:Integer, U<:Unsigned}(mt::MersenneTwister, g::RandIntGen{T,U})
-    x = rand(mt, U)
-    while x > g.u
-        x = rand(mt, U)
-    end
-    (unsigned(g.a) + rem_knuth(x, g.k)) % T
-end
+rand{U<:Unsigned}(mt::MersenneTwister, g::RandIntGen{U}) = g.k == zero(U) ? rand(mt, U) : rand_lessthan(mt, g.u) % g.k
 
-rand{T<:Union(Signed,Unsigned,Bool,Char)}(mt::MersenneTwister, r::UnitRange{T}) = rand(mt, RandIntGen(r))
+rand{T<:Union(UInt32,UInt64,UInt128)}(mt::MersenneTwister, r::UnitRange{T}) = first(r) + rand(mt, inrange(last(r)-first(r)))
+rand{T<:Union( Int32, Int64, Int128)}(mt::MersenneTwister, r::UnitRange{T}) = signed(rand(mt, unsigned(r)))
 
 # Randomly draw a sample from an AbstractArray r
 # (e.g. r is a range 0:2:8 or a vector [2, 3, 5, 7])
 rand(mt::MersenneTwister, r::AbstractArray) = @inbounds return r[rand(mt, 1:length(r))]
 
-function rand!(mt::MersenneTwister, A::AbstractArray, g::RandIntGen)
+function rand!{T<:Union(UInt32,UInt64,UInt128,Int32,Int64,Int128)}(mt::MersenneTwister, A::AbstractArray, r::UnitRange{T})
+    g = inrange(unsigned(last(r)-first(r)))
     for i = 1 : length(A)
-        @inbounds A[i] = rand(mt, g)
+        @inbounds A[i] = first(r) + T(rand(g))
     end
     return A
 end
 
-rand!{T<:Union(Signed,Unsigned,Bool,Char)}(mt::MersenneTwister, A::AbstractArray, r::UnitRange{T}) = rand!(mt, A, RandIntGen(r))
+rand!(r::Range, A::AbstractArray) = _rand!(r, A)
 
 function rand!(mt::MersenneTwister, A::AbstractArray, r::AbstractArray)
     g = RandIntGen(1:(length(r)))
