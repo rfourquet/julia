@@ -334,7 +334,7 @@ function rand!{T<:Union(Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64
     A
 end
 
-## Generate random integer within a range 0:n
+## Pick values randomly from an AbstractArray
 
 # maxmultiple: precondition: k>0
 
@@ -355,9 +355,18 @@ immutable RandIntGen{U<:Union(UInt32, UInt64, UInt128)}
     RandIntGen(k::U) = new(k, k == zero(U) ? typemax(U) : maxmultiple(k))
 end
 
-# generator API for ranges
-# inrange(k) returns a helper object for generating random integers in the range 0:k-1
+# generator API for ranges:
+# inrange(k::Unsigned) returns a helper object for generating random integers in the range 0:k-1
+#
+# note: if k==0, then k-1==typemax(k), this is "full range"
+# note: The interval 0:k-1 is the one closest to the machine. It would be natural to return
+# instead a random element from 1:k, to index into an AbstractArray, but as UnitRange has a
+# specialization which needs to get an element from a:a+k-1, the addition is left to the user
+# of inrange. The value of a could be stored in RandIntGen, but in the case of BigInt, this
+# would entail an otherwise unnecessary BigInt allocation (`one(Int)+b` is cheaper than
+# `one(BigInt)+b` for a BigInt `b`).
 inrange{U<:Union(UInt32,UInt64,UInt128)}(k::U) = RandIntGen{U}(k)
+inrange(k::Signed) = inrange(unsigned(k))
 
 @inline function rand_lessthan{U}(mt::MersenneTwister, u::U)
     while true
@@ -368,7 +377,6 @@ end
 
 # this function uses 32 bit entropy for small ranges of length <= typemax(UInt32) + 1
 # RandIntGen is responsible for providing the right value of k
-
 function rand(mt::MersenneTwister, g::RandIntGen{UInt64})
     g.k == zero(UInt64) && return rand(mt, Uint64)
     x = (g.k - 1) >> 32 == 0 ?
@@ -377,30 +385,31 @@ function rand(mt::MersenneTwister, g::RandIntGen{UInt64})
     return x % g.k
 end
 
-rand{U<:Unsigned}(mt::MersenneTwister, g::RandIntGen{U}) = g.k == zero(U) ? rand(mt, U) : rand_lessthan(mt, g.u) % g.k
+rand{U}(mt::MersenneTwister, g::RandIntGen{U}) = g.k == zero(U) ? rand(mt, U) : rand_lessthan(mt, g.u) % g.k
 
-rand{T<:Union(UInt32,UInt64,UInt128)}(mt::MersenneTwister, r::UnitRange{T}) = first(r) + rand(mt, inrange(last(r)-first(r)))
-rand{T<:Union( Int32, Int64, Int128)}(mt::MersenneTwister, r::UnitRange{T}) = signed(rand(mt, unsigned(r)))
+# wrappers:
+# general case:
+@inline getgen(r::AbstractArray) = inrange(length(r))
+
+rand(rng::AbstractRNG, r::AbstractArray, g::RandIntGen) = @inbounds return r[1+rand(rng, g)]
+
+# UnitRange: specialization so that it works with ranges whose length and getindex overflow
+@inline getgen{T<:Union(UInt32,UInt64,UInt128,Int32,Int64,Int128)}(r::UnitRange{T}) = inrange(last(r)-first(r)+one(T))
+
+function rand{T<:Union(UInt32,UInt64,UInt128,Int32,Int64,Int128)}(rng::AbstractRNG, r::UnitRange{T}, g::RandIntGen)
+    first(r) + rand(rng, g) % T
+end
 
 # Randomly draw a sample from an AbstractArray r
 # (e.g. r is a range 0:2:8 or a vector [2, 3, 5, 7])
-rand(mt::MersenneTwister, r::AbstractArray) = @inbounds return r[rand(mt, 1:length(r))]
-
-function rand!{T<:Union(UInt32,UInt64,UInt128,Int32,Int64,Int128)}(mt::MersenneTwister, A::AbstractArray, r::UnitRange{T})
-    g = inrange(unsigned(last(r)-first(r)))
-    for i = 1 : length(A)
-        @inbounds A[i] = first(r) + T(rand(g))
-    end
-    return A
-end
-
+rand(mt::MersenneTwister, r::AbstractArray) = rand(mt, r, getgen(r))
 
 function rand!(mt::MersenneTwister, A::AbstractArray, r::AbstractArray)
-    g = RandIntGen(1:(length(r)))
+    g = getgen(r)
     for i = 1 : length(A)
-        @inbounds A[i] = r[rand(mt, g)]
+        @inbounds A[i] = rand(mt, r, g)
     end
-    return A
+    A
 end
 
 rand{T}(mt::MersenneTwister, r::AbstractArray{T}, dims::Dims) = rand!(mt, Array(T, dims), r)
