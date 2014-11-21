@@ -348,7 +348,8 @@ maxmultiple(k::UInt64) = k >> 32 == 0 ? UInt64(maxmultiple(k % UInt32)) : maxmul
 # maximum multiple of k <= typemax(UInt128), decremented by one
 maxmultiple(k::UInt128) = div(typemax(UInt128), k)*k - 1
 
-immutable RandIntGen{U<:Union(UInt32, UInt64, UInt128)}
+immutable RandIntGen{T, U<:Union(UInt32, UInt64, UInt128)}
+    # T is the output type
     k::U   # range length or zero for full range
     u::U   # rejection threshold
 
@@ -365,8 +366,8 @@ end
 # of inrange. The value of a could be stored in RandIntGen, but in the case of BigInt, this
 # would entail an otherwise unnecessary BigInt allocation (`one(Int)+b` is cheaper than
 # `one(BigInt)+b` for a BigInt `b`).
-inrange{U<:Union(UInt32,UInt64,UInt128)}(k::U) = RandIntGen{U}(k)
-inrange(k::Signed) = inrange(unsigned(k))
+inrange{T, U<:Union(UInt32,UInt64,UInt128)}(k::U, ::Type{T}=U) = RandIntGen{T, U}(k)
+inrange{T<:Union(Int32,Int64,Int128)}(k::T) = inrange(unsigned(k), T)
 
 @inline function rand_lessthan{U}(mt::MersenneTwister, u::U)
     while true
@@ -377,15 +378,15 @@ end
 
 # this function uses 32 bit entropy for small ranges of length <= typemax(UInt32) + 1
 # RandIntGen is responsible for providing the right value of k
-function rand(mt::MersenneTwister, g::RandIntGen{UInt64})
-    g.k == zero(UInt64) && return rand(mt, Uint64)
+function rand{T}(mt::MersenneTwister, g::RandIntGen{T, UInt64})
+    g.k == zero(UInt64) && return rand(mt, Uint64) % T
     x = (g.k - 1) >> 32 == 0 ?
             UInt64(rand_lessthan(mt, g.u % UInt32)) :
             rand_lessthan(mt, g.u)
-    return x % g.k
+    return x % g.k % T
 end
 
-rand{U}(mt::MersenneTwister, g::RandIntGen{U}) = g.k == zero(U) ? rand(mt, U) : rand_lessthan(mt, g.u) % g.k
+rand{T, U}(mt::MersenneTwister, g::RandIntGen{T, U}) = (g.k == zero(U) ? rand(mt, U) : rand_lessthan(mt, g.u) % g.k) % T
 
 # wrappers:
 # general case:
@@ -397,7 +398,7 @@ rand(rng::AbstractRNG, r::AbstractArray, g::RandIntGen) = @inbounds return r[1+r
 @inline getgen{T<:Union(UInt32,UInt64,UInt128,Int32,Int64,Int128)}(r::UnitRange{T}) = inrange(last(r)-first(r)+one(T))
 
 function rand{T<:Union(UInt32,UInt64,UInt128,Int32,Int64,Int128)}(rng::AbstractRNG, r::UnitRange{T}, g::RandIntGen)
-    first(r) + rand(rng, g) % T
+    first(r) + rand(rng, g)
 end
 
 # Randomly draw a sample from an AbstractArray r
