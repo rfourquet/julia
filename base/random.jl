@@ -356,8 +356,8 @@ immutable RandIntGen{U<:Union(UInt32, UInt64, UInt128)}
 end
 
 # generator API for ranges
-# inrange(n) returns a helper object for generating random integers in the range 0:n
-inrange{U<:Union(UInt32,UInt64,UInt128)}(n::U) = RandIntGen{U}(one(U)+n)
+# inrange(k) returns a helper object for generating random integers in the range 0:k-1
+inrange{U<:Union(UInt32,UInt64,UInt128)}(k::U) = RandIntGen{U}(k)
 
 @inline function rand_lessthan{U}(mt::MersenneTwister, u::U)
     while true
@@ -394,7 +394,6 @@ function rand!{T<:Union(UInt32,UInt64,UInt128,Int32,Int64,Int128)}(mt::MersenneT
     return A
 end
 
-rand!(r::Range, A::AbstractArray) = _rand!(r, A)
 
 function rand!(mt::MersenneTwister, A::AbstractArray, r::AbstractArray)
     g = RandIntGen(1:(length(r)))
