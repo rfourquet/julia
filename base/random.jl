@@ -391,14 +391,14 @@ inrange{T<:Union(Bool,Int8,UInt8,Int16,UInt16)}(k::T) = inrange(UInt32(k), T)
 
 # wrappers:
 # general case:
-@inline rangelength(r::AbstractArray) = length(r)
-@inline rangeindex(r::AbstractArray, n) = @inbounds return r[1+n]
+rangelength(r::AbstractArray) = length(r)
+rangeindex(r::AbstractArray, n) = r[1+n]
 # note: RandIntGen{T} needs to keep track of the type T of `length(r)` so that `n` above can be
 # of type T; otherwise, n would be an unsigned, which causes problems in some cases (e.g. Rational).
 
 # UnitRange: specialization so that it works with ranges whose length and getindex overflow
-@inline rangelength{T}(r::UnitRange{T}) = last(r)-first(r)+one(T)
-@inline rangeindex(r::UnitRange, n) = first(r) + n
+rangelength{T}(r::UnitRange{T}) = isempty(r) ? error("range must be non-empty") : last(r)-first(r)+one(T)
+rangeindex{T}(r::UnitRange{T}, n) = T(first(r) + n)
 
 # Randomly draw a sample from an AbstractArray r
 # (e.g. r is a range 0:2:8 or a vector [2, 3, 5, 7])
