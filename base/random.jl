@@ -356,19 +356,6 @@ immutable RandIntGen{T, U<:Union(UInt32, UInt64, UInt128)}
     RandIntGen(k::U) = new(k, k == zero(U) ? typemax(U) : maxmultiple(k))
 end
 
-# generator API for ranges:
-# inrange(k::Unsigned) returns a helper object for generating random integers in the range 0:k-1
-#
-# note: if k==0, then k-1==typemax(k), this is "full range"
-# note: The interval 0:k-1 is the one closest to the machine. It would be natural to return
-# instead a random element from 1:k, to index into an AbstractArray, but as UnitRange has a
-# specialization which needs to get an element from a:a+k-1, the addition is left to the user
-# of inrange. The value of a could be stored in RandIntGen, but in the case of BigInt, this
-# would entail an otherwise unnecessary BigInt allocation (`one(Int)+b` is cheaper than
-# `one(BigInt)+b` for a BigInt `b`).
-inrange{T, U<:Union(UInt32,UInt64,UInt128)}(k::U, ::Type{T}=U) = RandIntGen{T, U}(k)
-inrange{T<:Union(Int32,Int64,Int128)}(k::T) = inrange(unsigned(k), T)
-
 @inline function rand_lessthan{U}(mt::MersenneTwister, u::U)
     while true
         x = rand(mt, U)
@@ -388,27 +375,38 @@ end
 
 rand{T, U}(mt::MersenneTwister, g::RandIntGen{T, U}) = (g.k == zero(U) ? rand(mt, U) : rand_lessthan(mt, g.u) % g.k) % T
 
+# generator API for ranges:
+# inrange(k) returns a helper object for generating random integers in the range 0:k-1
+#
+# note: if k==0 is unsigned, then k-1==typemax(k), this is "full range"
+# note: The interval 0:k-1 is the one closest to the machine. It would be natural to return
+# instead a random element from 1:k, to index into an AbstractArray, but as UnitRange has a
+# specialization which needs to get an element from a:a+k-1, the addition is left to the user
+# of inrange. The value of a could be stored in RandIntGen, but in the case of BigInt, this
+# would entail an otherwise unnecessary BigInt allocation (`one(Int)+b` is cheaper than
+# `one(BigInt)+b` for a BigInt `b`).
+inrange{T, U<:Union(UInt32,UInt64,UInt128)}(k::U, ::Type{T}=U) = RandIntGen{T, U}(k)
+inrange{T<:Union(Int32,Int64,Int128)}(k::T) = inrange(unsigned(k), T)
+
 # wrappers:
 # general case:
-@inline getgen(r::AbstractArray) = inrange(length(r))
-
-rand(rng::AbstractRNG, r::AbstractArray, g::RandIntGen) = @inbounds return r[1+rand(rng, g)]
+@inline rangelength(r::AbstractArray) = length(r)
+@inline rangeindex(r::AbstractArray, n) = @inbounds return r[1+n]
+# note: RandIntGen{T} needs to keep track of the type T of `length(r)` so that `n` above can be
+# of type T; otherwise, n would be an unsigned, which causes problems in some cases (e.g. Rational).
 
 # UnitRange: specialization so that it works with ranges whose length and getindex overflow
-@inline getgen{T<:Union(UInt32,UInt64,UInt128,Int32,Int64,Int128)}(r::UnitRange{T}) = inrange(last(r)-first(r)+one(T))
-
-function rand{T<:Union(UInt32,UInt64,UInt128,Int32,Int64,Int128)}(rng::AbstractRNG, r::UnitRange{T}, g::RandIntGen)
-    first(r) + rand(rng, g)
-end
+@inline rangelength{T}(r::UnitRange{T}) = last(r)-first(r)+one(T)
+@inline rangeindex(r::UnitRange, n) = first(r) + n
 
 # Randomly draw a sample from an AbstractArray r
 # (e.g. r is a range 0:2:8 or a vector [2, 3, 5, 7])
-rand(mt::MersenneTwister, r::AbstractArray) = rand(mt, r, getgen(r))
+rand(mt::MersenneTwister, r::AbstractArray) = rangeindex(r, rand(mt, inrange(rangelength(r))))
 
 function rand!(mt::MersenneTwister, A::AbstractArray, r::AbstractArray)
-    g = getgen(r)
+    g = inrange(rangelength(r))
     for i = 1 : length(A)
-        @inbounds A[i] = rand(mt, r, g)
+        @inbounds A[i] = rangeindex(r, rand(mt, g))
     end
     A
 end
