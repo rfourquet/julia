@@ -352,9 +352,10 @@ immutable RandIntGen{T, U<:Union(UInt32, UInt64, UInt128)}
     # T is the output type
     k::U   # range length or zero for full range
     u::U   # rejection threshold
-
-    RandIntGen(k::U) = new(k, k == zero(U) ? typemax(U) : maxmultiple(k))
 end
+
+# "randintgen" should be "RandIntGen", but this makes it slower
+randintgen{T, U}(::Type{T}, k::U) = RandIntGen{T,U}(k, k == zero(U) ? typemax(U) : maxmultiple(k))
 
 @inline function rand_lessthan{U}(mt::MersenneTwister, u::U)
     while true
@@ -376,29 +377,28 @@ end
 rand{T, U}(mt::MersenneTwister, g::RandIntGen{T, U}) = (g.k == zero(U) ? rand(mt, U) : rand_lessthan(mt, g.u) % g.k) % T
 
 # generator API for ranges:
-# inrange(k) returns a helper object for generating random integers in the range 0:k-1
+# inrange(k) returns a helper object for generating uniformly random integers in the range 0:k-1
 #
-# note: if k==0 is unsigned, then k-1==typemax(k), this is "full range"
+# note: If k==0 is unsigned, then k-1==typemax(k), this is "full range".
 # note: The interval 0:k-1 is the one closest to the machine. It would be natural to return
 # instead a random element from 1:k, to index into an AbstractArray, but as UnitRange has a
 # specialization which needs to get an element from a:a+k-1, the addition is left to the user
 # of inrange. The value of a could be stored in RandIntGen, but in the case of BigInt, this
 # would entail an otherwise unnecessary BigInt allocation (`one(Int)+b` is cheaper than
 # `one(BigInt)+b` for a BigInt `b`).
-inrange{T, U<:Union(UInt32,UInt64,UInt128)}(k::U, ::Type{T}=U) = RandIntGen{T, U}(k)
-inrange{T<:Union(Int32,Int64,Int128)}(k::T) = inrange(unsigned(k), T)
-inrange{T<:Union(Int8,UInt8,Int16,UInt16)}(k::T) = inrange(k % UInt32, T)
+@inline inrange{T<:Union(Int32,UInt32,Int64,UInt64,Int128,UInt128)}(k::T) = randintgen(T, unsigned(k))
+@inline inrange{T<:Union(Int8,UInt8,Int16,UInt16)}(k::T) = randintgen(T, k % UInt32)
 
 # wrappers:
 # general case:
-rangelength(r::AbstractArray) = isempty(r) ? error("collection must be non-empty") : length(r)
+rangelength(r::AbstractArray) = (isempty(r) && error("collection must be non-empty"); length(r))
 rangeindex(r::AbstractArray, n) = @inbounds return r[1+n]
 # note: RandIntGen{T} needs to keep track of the type T of `length(r)` so that `n` above can be
 # of type T; otherwise, n would be an unsigned, which causes problems in some cases (e.g. Rational).
 
 # UnitRange: specialization so that it works with ranges whose length and getindex overflow
-rangelength{T<:Union(Bool,IntTypes...)}(r::UnitRange{T}) = isempty(r) ? error("range must be non-empty") : last(r)-first(r)+one(T)
-rangeindex{T<:Union(Bool,IntTypes...)}(r::UnitRange{T}, n) = (first(r) + n) % T
+rangelength{T<:Union(Bool,IntTypes...)}(r::UnitRange{T}) = (isempty(r) && error("range must be non-empty"); last(r)-first(r)+one(T))
+rangeindex{ T<:Union(Bool,IntTypes...)}(r::UnitRange{T}, n) = (first(r) + n) % T
 
 # Randomly draw a sample from an AbstractArray r
 # (e.g. r is a range 0:2:8 or a vector [2, 3, 5, 7])
