@@ -387,6 +387,7 @@ rand{T, U}(mt::MersenneTwister, g::RandIntGen{T, U}) = (g.k == zero(U) ? rand(mt
 # `one(BigInt)+b` for a BigInt `b`).
 inrange{T, U<:Union(UInt32,UInt64,UInt128)}(k::U, ::Type{T}=U) = RandIntGen{T, U}(k)
 inrange{T<:Union(Int32,Int64,Int128)}(k::T) = inrange(unsigned(k), T)
+inrange{T<:Union(Bool,Int8,UInt8,Int16,UInt16)}(k::T) = inrange(UInt32(k), T)
 
 # wrappers:
 # general case:
