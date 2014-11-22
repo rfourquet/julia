@@ -343,7 +343,7 @@ maxmultiple(k::UInt32) = (div(0x0000000100000000, k)*k - 1) % UInt32
 
 maxmultiple_64(k::UInt64) = (div(0x00000000000000010000000000000000, k)*k - 1) % UInt64
 # 32 or 64 bits version depending on size
-maxmultiple(k::UInt64) = k >> 32 == 0 ? UInt64(maxmultiple(k % UInt32)) : maxmultiple_64(k)
+maxmultiple(k::UInt64) = k >> 32 == 0 ? maxmultiple(k % UInt32) % UInt64 : maxmultiple_64(k)
 
 # maximum multiple of k <= typemax(UInt128), decremented by one
 maxmultiple(k::UInt128) = div(typemax(UInt128), k)*k - 1
@@ -366,9 +366,9 @@ end
 # this function uses 32 bit entropy for small ranges of length <= typemax(UInt32) + 1
 # RandIntGen is responsible for providing the right value of k
 function rand{T}(mt::MersenneTwister, g::RandIntGen{T, UInt64})
-    g.k == zero(UInt64) && return rand(mt, Uint64) % T
+    g.k == zero(UInt64) && return rand(mt, UInt64) % T
     x = (g.k - 1) >> 32 == 0 ?
-            UInt64(rand_lessthan(mt, g.u % UInt32)) :
+            rand_lessthan(mt, g.u % UInt32) % UInt64 :
             rand_lessthan(mt, g.u)
     return x % g.k % T
 end
