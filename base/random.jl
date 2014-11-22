@@ -348,14 +348,13 @@ maxmultiple(k::UInt64) = k >> 32 == 0 ? maxmultiple(k % UInt32) % UInt64 : maxmu
 # maximum multiple of k <= typemax(UInt128), decremented by one
 maxmultiple(k::UInt128) = div(typemax(UInt128), k)*k - 1
 
-immutable RandIntGen{T, U<:Union(UInt32, UInt64, UInt128)}
+immutable RandIntGen{T<:Integer, U<:Union(UInt32, UInt64, UInt128)}
     # T is the output type
     k::U   # range length or zero for full range
     u::U   # rejection threshold
 end
 
-# "randintgen" should be "RandIntGen", but this makes it slower
-randintgen{T, U}(::Type{T}, k::U) = RandIntGen{T,U}(k, k == zero(U) ? typemax(U) : maxmultiple(k))
+@inline RandIntGen{T, U}(::Type{T}, k::U) = RandIntGen{T,U}(k, k == 0 ? typemax(U) : maxmultiple(k))
 
 @inline function rand_lessthan{U}(mt::MersenneTwister, u::U)
     while true
@@ -367,14 +366,14 @@ end
 # this function uses 32 bit entropy for small ranges of length <= typemax(UInt32) + 1
 # RandIntGen is responsible for providing the right value of k
 function rand{T}(mt::MersenneTwister, g::RandIntGen{T, UInt64})
-    g.k == zero(UInt64) && return rand(mt, UInt64) % T
+    g.k == 0 && return rand(mt, UInt64) % T
     x = (g.k - 1) >> 32 == 0 ?
             rand_lessthan(mt, g.u % UInt32) % UInt64 :
             rand_lessthan(mt, g.u)
     return x % g.k % T
 end
 
-rand{T, U}(mt::MersenneTwister, g::RandIntGen{T, U}) = (g.k == zero(U) ? rand(mt, U) : rand_lessthan(mt, g.u) % g.k) % T
+rand{T, U}(mt::MersenneTwister, g::RandIntGen{T, U}) = (g.k == 0 ? rand(mt, U) : rand_lessthan(mt, g.u) % g.k) % T
 
 # generator API for ranges:
 # inrange(k) returns a helper object for generating uniformly random integers in the range 0:k-1
@@ -386,8 +385,9 @@ rand{T, U}(mt::MersenneTwister, g::RandIntGen{T, U}) = (g.k == zero(U) ? rand(mt
 # of inrange. The value of a could be stored in RandIntGen, but in the case of BigInt, this
 # would entail an otherwise unnecessary BigInt allocation (`one(Int)+b` is cheaper than
 # `one(BigInt)+b` for a BigInt `b`).
-@inline inrange{T<:Union(Int32,UInt32,Int64,UInt64,Int128,UInt128)}(k::T) = randintgen(T, unsigned(k))
-@inline inrange{T<:Union(Int8,UInt8,Int16,UInt16)}(k::T) = randintgen(T, k % UInt32)
+
+@inline inrange{T<:Union(UInt32,UInt64,UInt128,Int32,Int64,Int128)}(k::T) = RandIntGen(T, unsigned(k))
+@inline inrange{T<:Union(Int8,UInt8,Int16,UInt16)}(k::T) = RandIntGen(T, k % UInt32)
 
 # wrappers:
 # general case:

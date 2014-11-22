@@ -63,6 +63,7 @@ for T in (Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt
     @test typeof(r) == T
     @test 97 <= r <= 122
     @test mod(r,2)==1
+
     if T<:Integer
         x = rand(typemin(T):typemax(T))
         @test isa(x,T)
