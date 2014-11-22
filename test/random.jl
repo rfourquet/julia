@@ -63,7 +63,6 @@ for T in (Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt
     @test typeof(r) == T
     @test 97 <= r <= 122
     @test mod(r,2)==1
-
     if T<:Integer
         x = rand(typemin(T):typemax(T))
         @test isa(x,T)
@@ -75,8 +74,8 @@ if sizeof(Int32) < sizeof(Int)
     r = rand(int32(-1):typemax(Int32))
     @test typeof(r) == Int32
     @test -1 <= r <= typemax(Int32)
-    @test all([div(0x00010000000000000000,k)*k - 1 == Base.Random.getgen(uint64(1:k)).u for k in 13 .+ int64(2).^(32:62)])
-    @test all([div(0x00010000000000000000,k)*k - 1 == Base.Random.getgen(int64(1:k)).u for k in 13 .+ int64(2).^(32:61)])
+    @test all([div(0x00010000000000000000,k)*k - 1 == Base.Random.inrange(uint64(k)).u for k in 13 .+ int64(2).^(32:62)])
+    @test all([div(0x00010000000000000000,k)*k - 1 == Base.Random.inrange(int64(k)).u for k in 13 .+ int64(2).^(32:61)])
 
 end
 
@@ -181,8 +180,8 @@ r = uint64(rand(uint32(97:122)))
 srand(seed)
 @test r == rand(uint64(97:122))
 
-@test all([div(0x000100000000,k)*k - 1 == Base.Random.getgen(uint64(1:k)).u for k in 13 .+ int64(2).^(1:30)])
-@test all([div(0x000100000000,k)*k - 1 == Base.Random.getgen(int64(1:k)).u for k in 13 .+ int64(2).^(1:30)])
+@test all([div(0x000100000000,k)*k - 1 == Base.Random.inrange(uint64(k)).u for k in 13 .+ int64(2).^(1:30)])
+@test all([div(0x000100000000,k)*k - 1 == Base.Random.inrange(int64(k)).u for k in 13 .+ int64(2).^(1:30)])
 
 import Base.Random: uuid4, UUID
 

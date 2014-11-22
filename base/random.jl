@@ -1,6 +1,6 @@
 module Random
 
-using Base.dSFMT
+using Base: dSFMT, IntTypes
 
 export srand,
        rand, rand!,
@@ -387,18 +387,18 @@ rand{T, U}(mt::MersenneTwister, g::RandIntGen{T, U}) = (g.k == zero(U) ? rand(mt
 # `one(BigInt)+b` for a BigInt `b`).
 inrange{T, U<:Union(UInt32,UInt64,UInt128)}(k::U, ::Type{T}=U) = RandIntGen{T, U}(k)
 inrange{T<:Union(Int32,Int64,Int128)}(k::T) = inrange(unsigned(k), T)
-inrange{T<:Union(Bool,Int8,UInt8,Int16,UInt16)}(k::T) = inrange(UInt32(k), T)
+inrange{T<:Union(Int8,UInt8,Int16,UInt16)}(k::T) = inrange(k % UInt32, T)
 
 # wrappers:
 # general case:
-rangelength(r::AbstractArray) = length(r)
-rangeindex(r::AbstractArray, n) = r[1+n]
+rangelength(r::AbstractArray) = isempty(r) ? error("collection must be non-empty") : length(r)
+rangeindex(r::AbstractArray, n) = @inbounds return r[1+n]
 # note: RandIntGen{T} needs to keep track of the type T of `length(r)` so that `n` above can be
 # of type T; otherwise, n would be an unsigned, which causes problems in some cases (e.g. Rational).
 
 # UnitRange: specialization so that it works with ranges whose length and getindex overflow
-rangelength{T}(r::UnitRange{T}) = isempty(r) ? error("range must be non-empty") : last(r)-first(r)+one(T)
-rangeindex{T}(r::UnitRange{T}, n) = T(first(r) + n)
+rangelength{T<:Union(Bool,IntTypes...)}(r::UnitRange{T}) = isempty(r) ? error("range must be non-empty") : last(r)-first(r)+one(T)
+rangeindex{T<:Union(Bool,IntTypes...)}(r::UnitRange{T}, n) = (first(r) + n) % T
 
 # Randomly draw a sample from an AbstractArray r
 # (e.g. r is a range 0:2:8 or a vector [2, 3, 5, 7])
