@@ -947,7 +947,7 @@ const ziggurat_exp_r      = 7.6971174701310497140446280481
 
 function randmtzig_randn(rng::MersenneTwister=GLOBAL_RNG)
     @inbounds begin
-        r = rand_ui52(rng)
+        r = rand_ui52_raw_inbounds(rng) & 0x000fffffffffffff
         rabs = int64(r>>1) # One bit for the sign
         idx = rabs & 0xFF
         x = ifelse(r % Bool, -rabs, rabs)*wi[idx+1]
@@ -967,6 +967,7 @@ function randmtzig_randn_unlikely(rng, idx, rabs, x)
     elseif (fi[idx] - fi[idx+1])*rand(rng) + fi[idx+1] < exp(-0.5*x*x)
         return x # return from the triangular area
     else
+        reserve_1(rng)
         return randmtzig_randn(rng)
     end
 end
@@ -990,8 +991,15 @@ end
 
 
 
-randn(rng::MersenneTwister=GLOBAL_RNG) = randmtzig_randn(rng)
-randn!(rng::MersenneTwister, A::Array{Float64}) = (for i = 1:length(A);A[i] = randmtzig_randn(rng);end;A)
+randn(rng::MersenneTwister=GLOBAL_RNG) = (reserve_1(rng); randmtzig_randn(rng))
+
+function randn!(rng::MersenneTwister, A::Array{Float64})
+    for i = 1:length(A)
+        A[i] = randmtzig_randn(rng)
+    end
+    A
+end
+
 randn!(A::Array{Float64}) = randn!(GLOBAL_RNG, A)
 randn(dims::Dims) = randn!(Array(Float64, dims))
 randn(dims::Int...) = randn!(Array(Float64, dims...))
