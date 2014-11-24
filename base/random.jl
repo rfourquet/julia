@@ -18,6 +18,7 @@ type MersenneTwister <: AbstractRNG
     vals::Vector{Float64}
     idx::Int
     seed::Vector{UInt32}
+    iwork::Int
 
     MersenneTwister(seed) = srand(new(DSFMT_state(), Array(Float64, MTCacheLength)),
                                   seed)
@@ -960,14 +961,17 @@ end
 function randmtzig_randn_unlikely(rng, idx, rabs, x)
     @inbounds if idx == 0
         while true
+            rng.iwork -= 2
             xx = -ziggurat_nor_inv_r*log(rand(rng))
             yy = -log(rand(rng))
             yy+yy > xx*xx && return (rabs >> 8) % Bool ? -ziggurat_nor_r-xx : ziggurat_nor_r+xx
         end
     elseif (fi[idx] - fi[idx+1])*rand(rng) + fi[idx+1] < exp(-0.5*x*x)
+        rng.iwork -= 1
         return x # return from the triangular area
     else
         reserve_1(rng)
+        rng.iwork -= 2
         return randmtzig_randn(rng)
     end
 end
@@ -994,8 +998,17 @@ end
 randn(rng::MersenneTwister=GLOBAL_RNG) = (reserve_1(rng); randmtzig_randn(rng))
 
 function randn!(rng::MersenneTwister, A::Array{Float64})
-    for i = 1:length(A)
-        A[i] = randmtzig_randn(rng)
+    n = length(A)
+    i = 0
+    rng.iwork = 0
+    while true
+        while rng.iwork > 0
+            rng.iwork -= 1
+            A[i+=1] = randmtzig_randn(rng)
+        end
+        i == n && break
+        reserve_1(rng)
+        rng.iwork = min(n-i, mt_avail(rng))
     end
     A
 end
