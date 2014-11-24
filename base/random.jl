@@ -962,8 +962,9 @@ function randmtzig_randn_unlikely(rng, idx, rabs, x)
     @inbounds if idx == 0
         while true
             rng.iwork -= 2
-            xx = -ziggurat_nor_inv_r*log(rand(rng))
-            yy = -log(rand(rng))
+            reserve(rng, 2)
+            xx = -ziggurat_nor_inv_r*log(rand_inbounds(rng))
+            yy = -log(rand_inbounds(rng))
             yy+yy > xx*xx && return (rabs >> 8) % Bool ? -ziggurat_nor_r-xx : ziggurat_nor_r+xx
         end
     elseif (fi[idx] - fi[idx+1])*rand(rng) + fi[idx+1] < exp(-0.5*x*x)
@@ -995,16 +996,15 @@ end
 
 
 
-randn(rng::MersenneTwister=GLOBAL_RNG) = (reserve_1(rng); randmtzig_randn(rng))
+@inline randn(rng::MersenneTwister=GLOBAL_RNG) = (reserve_1(rng); randmtzig_randn(rng))
 
 function randn!(rng::MersenneTwister, A::Array{Float64})
     n = length(A)
     i = 0
     rng.iwork = 0
     while true
-        while rng.iwork > 0
-            rng.iwork -= 1
-            A[i+=1] = randmtzig_randn(rng)
+        while (rng.iwork-=1) >= 0
+            @inbounds A[i+=1] = randmtzig_randn(rng)
         end
         i == n && break
         reserve_1(rng)
@@ -1012,6 +1012,22 @@ function randn!(rng::MersenneTwister, A::Array{Float64})
     end
     A
 end
+
+# function randn0!(rng::MersenneTwister, A::Array{Float64})
+    # n = length(A)
+    # i = 0
+    # s = 0
+    # while true
+        # while s > 0
+            # s -= 1
+            # A[i+=1] = randmtzig_randn(rng)
+        # end
+        # i == n && break
+        # reserve_1(rng)
+        # rng.iwork = min(n-i, mt_avail(rng))
+    # end
+    # A
+# end
 
 randn!(A::Array{Float64}) = randn!(GLOBAL_RNG, A)
 randn(dims::Dims) = randn!(Array(Float64, dims))
