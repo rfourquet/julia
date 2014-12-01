@@ -41,13 +41,19 @@ type BigInt <: Integer
     alloc::Cint
     size::Cint
     d::Ptr{Limb}
-    function BigInt()
-        b = new(zero(Cint), zero(Cint), C_NULL)
-        ccall((:__gmpz_init,:libgmp), Void, (Ptr{BigInt},), &b)
-        finalizer(b, _gmp_clear_func)
-        return b
+    function BigInt(::Val{:allocbits}, nbits)
+        z = new()
+        if nbits == 0
+            ccall((:__gmpz_init,:libgmp), Void, (Ptr{BigInt},), &z)
+        else
+            ccall((:__gmpz_init2,:libgmp), Void, (Ptr{BigInt}, Culong), &z, nbits)
+        end
+        finalizer(z, _gmp_clear_func)
+        return z
     end
 end
+
+BigInt() = BigInt(Val{:allocbits}(), 0)
 
 _gmp_clear_func = C_NULL
 _mpfr_clear_func = C_NULL
@@ -55,9 +61,10 @@ _mpfr_clear_func = C_NULL
 function __init__()
     try
         if gmp_version().major != GMP_VERSION.major || gmp_bits_per_limb() != GMP_BITS_PER_LIMB
-            error(string("The dynamically loaded GMP library (version $(gmp_version()) with __gmp_bits_per_limb == $(gmp_bits_per_limb()))\n",
-                         "does not correspond to the compile time version (version $GMP_VERSION with __gmp_bits_per_limb == $GMP_BITS_PER_LIMB).\n",
-                         "Please rebuild Julia."))
+            msg = gmp_bits_per_limb() != GMP_BITS_PER_LIMB ? error : warn
+            msg(string("The dynamically loaded GMP library (version $(gmp_version()) with __gmp_bits_per_limb == $(gmp_bits_per_limb()))\n",
+                       "does not correspond to the compile time version (version $GMP_VERSION with __gmp_bits_per_limb == $GMP_BITS_PER_LIMB).\n",
+                       "Please rebuild Julia."))
         end
 
         global _gmp_clear_func = cglobal((:__gmpz_clear, :libgmp))
