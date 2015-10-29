@@ -477,10 +477,11 @@ for (T, U) in [(UInt8, UInt32), (UInt16, UInt32),
 end
 
 immutable RangeGeneratorBigInt <: RangeGenerator
-    a::BigInt             # first
-    m::BigInt             # range length - 1
-    nlimbs::Int           # number of limbs in generated BigInt's
-    mask::Limb            # applied to the highest limb
+    a::BigInt         # first
+    m::BigInt         # range length - 1
+    nlimbs::Int       # number of limbs in generated BigInt's (z ∈ [0, m])
+    nlimbsmax::Int    # max number of limbs for z+a
+    mask::Limb        # applied to the highest limb
 end
 
 
@@ -492,7 +493,8 @@ function RangeGenerator(r::UnitRange{BigInt})
     nlimbs, highbits = divrem(nd, 8*sizeof(Limb))
     highbits > 0 && (nlimbs += 1)
     mask = highbits == 0 ? ~zero(Limb) : one(Limb)<<highbits - one(Limb)
-    return RangeGeneratorBigInt(first(r), m, nlimbs, mask)
+    nlimbsmax = max(abs(last(r).size), abs(first(r).size))
+    return RangeGeneratorBigInt(first(r), m, nlimbs, nlimbsmax, mask)
 end
 
 
@@ -523,7 +525,7 @@ function rand{T<:Integer, U<:Unsigned}(rng::AbstractRNG, g::RangeGeneratorInt{T,
 end
 
 function rand(rng::AbstractRNG, g::RangeGeneratorBigInt)
-    x = BigInt(Val{:allocbits}(), g.nlimbs*8*sizeof(Limb))
+    x = BigInt(Val{:allocbits}(), g.nlimbsmax*8*sizeof(Limb))
     limbs = pointer_to_array(x.d, g.nlimbs)
     while true
         rand!(rng, limbs)
