@@ -133,11 +133,10 @@ function decompose(x::BigFloat)
     isnan(x) && return big(0), 0, 0
     isinf(x) && return big(x.sign), 0, 0
     x == 0 && return big(0), 0, Int(x.sign)
-    s = BigInt()
-    ccall((:__gmpz_realloc2, :libgmp), Void, (Ptr{BigInt}, Culong), &s, x.prec)
-    s.size = -fld(-x.prec,(sizeof(Culong)<<3))
-    ccall(:memcpy, Ptr{Void}, (Ptr{Void}, Ptr{Void}, Csize_t), s.d, x.d, s.size*sizeof(Culong))
-    s, Int(x.exp - x.prec), Int(x.sign)
+    ccall((:__gmpz_realloc2, :libgmp), Void, (Ptr{GMP.MPZ}, Culong), &GMP._Z, x.prec)
+    _Z.size = -fld(-x.prec,(sizeof(Culong)<<3))
+    ccall(:memcpy, Ptr{Void}, (Ptr{Void}, Ptr{Void}, Csize_t), _Z.d, x.d, _Z.size*sizeof(Culong))
+    BigInt(GMP._Z), Int(x.exp - x.prec), Int(x.sign)
 end
 
 ## streamlined hashing for smallish rational types ##

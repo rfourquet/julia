@@ -3,7 +3,7 @@
 module Random
 
 using Base.dSFMT
-using Base.GMP: Limb
+using Base.GMP: GMP_VERSION, Limb, MPZ, _MPZ, _Z, _realloc2
 
 export srand,
        rand, rand!,
@@ -525,23 +525,24 @@ function rand{T<:Integer, U<:Unsigned}(rng::AbstractRNG, g::RangeGeneratorInt{T,
 end
 
 function rand(rng::AbstractRNG, g::RangeGeneratorBigInt)
-    x = BigInt(Val{:allocbits}(), g.nlimbsmax*8*sizeof(Limb))
-    limbs = pointer_to_array(x.d, g.nlimbs)
+#    x = BigInt(Val{:allocbits}(), g.nlimbsmax*8*sizeof(Limb))
+    _realloc2(_Z, g.nlimbsmax*8*sizeof(Limb))
+    limbs = pointer_to_array(_Z.d, g.nlimbs)
     while true
         rand!(rng, limbs)
         @inbounds limbs[end] &= g.mask
         ccall((:__gmpn_cmp, :libgmp), Cint, (Ptr{Limb}, Ptr{Limb}, Clong),
-              x.d, g.m.d, g.nlimbs) <= 0 && break
+              _Z.d, pointer(g.m.d), g.nlimbs) <= 0 && break
     end
     # adjust x.size (normally done by mpz_limbs_finish, in GMP version >= 6)
-    x.size = g.nlimbs
-    while x.size > 0
-        @inbounds limbs[x.size] != 0 && break
-        x.size -= 1
+    _Z.size = g.nlimbs
+    while _Z.size > 0
+        @inbounds limbs[_Z.size] != 0 && break
+        _Z.size -= 1
     end
-    ccall((:__gmpz_add, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}),
-          &x, &x, &g.a)
-    return x
+    ccall((:__gmpz_add, :libgmp), Void, (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}),
+          &_Z, &_Z, &MPZ(g.a))
+    return BigInt(_Z)
 end
 
 rand{T<:Union{Signed,Unsigned,BigInt,Bool}}(rng::AbstractRNG, r::UnitRange{T}) = rand(rng, RangeGenerator(r))
