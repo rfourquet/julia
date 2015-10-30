@@ -857,7 +857,7 @@ function decode(b::Int, x::BigInt)
     length(DIGITS) < pt+1 && resize!(DIGITS, pt+1)
     neg && (x.size = -x.size)
     ccall((:__gmpz_get_str, :libgmp), Ptr{UInt8},
-          (Ptr{UInt8}, Cint, Ptr{BigInt}), DIGITS, b, &x)
+          (Ptr{UInt8}, Cint, Ptr{GMP.MPZ}), DIGITS, b, &MPZ(x))
     neg && (x.size = -x.size)
     return Int32(pt), Int32(pt), neg
 end

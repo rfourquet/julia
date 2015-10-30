@@ -25,7 +25,7 @@ import
 
 import Base.Rounding: get_rounding_raw, set_rounding_raw
 
-import Base.GMP: ClongMax, CulongMax, CdoubleMax
+import Base.GMP: ClongMax, CulongMax, CdoubleMax, MPZ, _MPZ, _Z
 
 import Base.Math.lgamma_r
 
@@ -81,7 +81,7 @@ end
 
 function convert(::Type{BigFloat}, x::BigInt)
     z = BigFloat()
-    ccall((:mpfr_set_z, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigInt}, Int32), &z, &x, ROUNDING_MODE[end])
+    ccall((:mpfr_set_z, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{MPZ}, Int32), &z, &MPZ(x), ROUNDING_MODE[end])
     return z
 end
 
@@ -121,10 +121,9 @@ end
 
 function unsafe_cast(::Type{BigInt}, x::BigFloat, ri::Cint)
     # actually safe, just keep naming consistent
-    z = BigInt()
-    ccall((:mpfr_get_z, :libmpfr), Int32, (Ptr{BigInt}, Ptr{BigFloat}, Int32),
-          &z, &x, ri)
-    z
+    ccall((:mpfr_get_z, :libmpfr), Int32, (Ptr{_MPZ}, Ptr{BigFloat}, Int32),
+          &_Z, &x, ri)
+    BigInt(_Z)
 end
 unsafe_cast(::Type{Int128}, x::BigFloat, ri::Cint) = Int128(unsafe_cast(BigInt,x,ri))
 unsafe_cast(::Type{UInt128}, x::BigFloat, ri::Cint) = UInt128(unsafe_cast(BigInt,x,ri))
@@ -237,7 +236,7 @@ for (fJ, fC) in ((:+,:add), (:*,:mul))
         # BigInt
         function ($fJ)(x::BigFloat, c::BigInt)
             z = BigFloat()
-            ccall(($(string(:mpfr_,fC,:_z)), :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigFloat}, Ptr{BigInt}, Int32), &z, &x, &c, ROUNDING_MODE[end])
+            ccall(($(string(:mpfr_,fC,:_z)), :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigFloat}, Ptr{MPZ}, Int32), &z, &x, &MPZ(c), ROUNDING_MODE[end])
             return z
         end
         ($fJ)(c::BigInt, x::BigFloat) = ($fJ)(x,c)
@@ -292,7 +291,7 @@ for (fJ, fC) in ((:-,:sub), (:/,:div))
         # BigInt
         function ($fJ)(x::BigFloat, c::BigInt)
             z = BigFloat()
-            ccall(($(string(:mpfr_,fC,:_z)), :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigFloat}, Ptr{BigInt}, Int32), &z, &x, &c, ROUNDING_MODE[end])
+            ccall(($(string(:mpfr_,fC,:_z)), :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigFloat}, Ptr{MPZ}, Int32), &z, &x, &MPZ(c), ROUNDING_MODE[end])
             return z
         end
         # no :mpfr_z_div function
@@ -301,7 +300,7 @@ end
 
 function -(c::BigInt, x::BigFloat)
     z = BigFloat()
-    ccall((:mpfr_z_sub, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigInt}, Ptr{BigFloat}, Int32), &z, &c, &x, ROUNDING_MODE[end])
+    ccall((:mpfr_z_sub, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{MPZ}, Ptr{BigFloat}, Int32), &z, &MPZ(c), &x, ROUNDING_MODE[end])
     return z
 end
 
@@ -365,7 +364,7 @@ end
 # BigInt
 function div(x::BigFloat, c::BigInt)
     z = BigFloat()
-    ccall((:mpfr_div_z, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigFloat}, Ptr{BigInt}, Int32), &z, &x, &c, to_mpfr(RoundToZero))
+    ccall((:mpfr_div_z, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigFloat}, Ptr{MPZ}, Int32), &z, &x, &MPZ(c), to_mpfr(RoundToZero))
     ccall((:mpfr_trunc, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigFloat}), &z, &z)
     return z
 end
@@ -437,7 +436,7 @@ end
 
 function ^(x::BigFloat, y::BigInt)
     z = BigFloat()
-    ccall((:mpfr_pow_z, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigFloat}, Ptr{BigInt}, Int32), &z, &x, &y, ROUNDING_MODE[end])
+    ccall((:mpfr_pow_z, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigFloat}, Ptr{MPZ}, Int32), &z, &x, &MPZ(y), ROUNDING_MODE[end])
     return z
 end
 
@@ -645,7 +644,7 @@ end
 
 function cmp(x::BigFloat, y::BigInt)
     isnan(x) && throw(DomainError())
-    ccall((:mpfr_cmp_z, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{BigInt}), &x, &y)
+    ccall((:mpfr_cmp_z, :libmpfr), Int32, (Ptr{BigFloat}, Ptr{MPZ}), &x, &MPZ(y))
 end
 function cmp(x::BigFloat, y::ClongMax)
     isnan(x) && throw(DomainError())
