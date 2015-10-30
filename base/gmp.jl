@@ -30,24 +30,67 @@ const GMP_BITS_PER_LIMB = gmp_bits_per_limb()
 # be used whenever mp_limb_t is in the signature of ccall'ed GMP functions.
 if GMP_BITS_PER_LIMB == 32
     typealias Limb UInt32
+    typealias SLimbMax Union{Int8, Int16, Int32}
+    typealias ULimbMax Union{UInt8, UInt16, UInt32}
 elseif GMP_BITS_PER_LIMB == 64
     typealias Limb UInt64
+    typealias SLimbMax Union{Int8, Int16, Int32, Int64}
+    typealias ULimbMax Union{UInt8, UInt16, UInt32, UInt64}
 else
     error("GMP: cannot determine the type mp_limb_t (__gmp_bits_per_limb == $GMP_BITS_PER_LIMB)")
 end
 
+typealias Limbs Vector{Limb}
+typealias Size Clong
+typealias _Size Cint # Cint in GMP, to save space
 
-type BigInt <: Integer
+immutable BigInt <: Integer
+    size::_Size
+    d::Limbs
+    #    BigInt(::Type{Val{:unsafe}}, size::Size, d::Limbs) = new(size, d % _Size)
+#    BigInt(size=0) = new(size)
+end
+
+BigInt() = BigInt(0)
+
+immutable MPZ <: Integer
     alloc::Cint
     size::Cint
     d::Ptr{Limb}
-    function BigInt()
-        b = new(zero(Cint), zero(Cint), C_NULL)
-        ccall((:__gmpz_init,:libgmp), Void, (Ptr{BigInt},), &b)
-        finalizer(b, _gmp_clear_func)
-        return b
+    MPZ(z::BigInt) = new(length(z.d), z.size, pointer(z.d)) # should be immutable
+end
+
+type _MPZ <: Integer
+    alloc::Cint
+    size::Cint
+    d::Ptr{Limb}
+    function _MPZ()
+        _z = new(zero(Cint), zero(Cint), C_NULL)
+#        ccall((:__gmpz_init,:libgmp), Void, (Ptr{_MPZ},), &_z)
+#        finalizer(b, _gmp_clear_func)
+        return _z
     end
 end
+
+_finish(z::BigInt, _z::_MPZ) = z.size = _z.size
+
+_reinit(_z::_MPZ) = ccall((:__gmpz_init,:libgmp), Void, (Ptr{_MPZ},), &_z)
+
+function _reinit2(_z::_MPZ)  #ccall((:__gmpz_init,:libgmp), Void, (Ptr{_MPZ},), &_z)
+    _z.alloc = 0
+    _z.size = 0
+    _z.d = C_NULL
+end
+
+function BigInt(_z::_MPZ)
+    z = BigInt(_z.size, pointer_to_array(_z.d, _z.alloc, true))
+    _reinit(_z)
+    z
+end
+
+const _Z = _MPZ()
+const _ZZ = _MPZ()
+const _ZZZ = _MPZ()
 
 _gmp_clear_func = C_NULL
 _mpfr_clear_func = C_NULL
@@ -92,39 +135,33 @@ function tryparse_internal(::Type{BigInt}, s::AbstractString, startpos::Int, end
         raise && throw(ArgumentError("premature end of integer: $(repr(bstr))"))
         return _n
     end
-    z = BigInt()
     if Base.containsnul(bstr)
         err = -1 # embedded NUL char (not handled correctly by GMP)
     else
         err = ccall((:__gmpz_set_str, :libgmp),
-                    Int32, (Ptr{BigInt}, Ptr{UInt8}, Int32),
-                    &z, pointer(bstr)+(i-start(bstr)), base)
+                    Int32, (Ptr{_MPZ}, Ptr{UInt8}, Int32),
+                    &_Z, pointer(bstr)+(i-start(bstr)), base)
     end
     if err != 0
         raise && throw(ArgumentError("invalid BigInt: $(repr(bstr))"))
         return _n
     end
+    z = BigInt(_Z)
     Nullable(sgn < 0 ? -z : z)
+
 end
 
-function convert(::Type{BigInt}, x::Union{Clong,Int32})
-    z = BigInt()
-    ccall((:__gmpz_set_si, :libgmp), Void, (Ptr{BigInt}, Clong), &z, x)
-    return z
-end
-function convert(::Type{BigInt}, x::Union{Culong,UInt32})
-    z = BigInt()
-    ccall((:__gmpz_set_ui, :libgmp), Void, (Ptr{BigInt}, Culong), &z, x)
-    return z
-end
+convert(::Type{BigInt}, x::SLimbMax) = BigInt(ifelse(x==0, 0, ifelse(x>0, 1, -1)),
+                                              Limb[abs(x)])
+
+convert(::Type{BigInt}, x::ULimbMax) = BigInt(_Size(x!=0), Limb[x])
 
 convert(::Type{BigInt}, x::Bool) = BigInt(UInt(x))
 
 
 function unsafe_trunc(::Type{BigInt}, x::Union{Float32,Float64})
-    z = BigInt()
-    ccall((:__gmpz_set_d, :libgmp), Void, (Ptr{BigInt}, Cdouble), &z, x)
-    return z
+    ccall((:__gmpz_set_d, :libgmp), Void, (Ptr{_MPZ}, Cdouble), &_Z, x)
+    BigInt(_Z)
 end
 
 function convert(::Type{BigInt}, x::Union{Float32,Float64})
@@ -172,8 +209,8 @@ end
 rem(x::BigInt, ::Type{Bool}) = ((x&1)!=0)
 function rem{T<:Union{Unsigned,Signed}}(x::BigInt, ::Type{T})
     u = zero(T)
-    for l = 1:min(abs(x.size), cld(sizeof(T),sizeof(Limb)))
-        u += (unsafe_load(x.d,l)%T) << ((sizeof(Limb)<<3)*(l-1))
+    @inbounds for l = 1:min(abs(x.size), cld(sizeof(T),sizeof(Limb)))
+        u += (x.d[l]%T) << ((sizeof(Limb)<<3)*(l-1))
     end
     x.size < 0 ? -u : u
 end
@@ -202,7 +239,7 @@ end
 
 
 function call(::Type{Float64}, n::BigInt, ::RoundingMode{:ToZero})
-    ccall((:__gmpz_get_d, :libgmp), Float64, (Ptr{BigInt},), &n)
+    ccall((:__gmpz_get_d, :libgmp), Float64, (Ptr{MPZ},), &MPZ(n))
 end
 
 function call{T<:Union{Float16,Float32}}(::Type{T}, n::BigInt, ::RoundingMode{:ToZero})
@@ -253,69 +290,68 @@ for (fJ, fC) in ((:+, :add), (:-,:sub), (:*, :mul),
                  (:&, :and), (:|, :ior), (:$, :xor))
     @eval begin
         function ($fJ)(x::BigInt, y::BigInt)
-            z = BigInt()
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &x, &y)
-            return z
+
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void,
+                  (Ptr{_MPZ}, Ptr{MPZ}, Ptr{MPZ}),
+                  &_Z, &MPZ(x), &MPZ(y))
+            return BigInt(_Z)
         end
     end
 end
 
 function invmod(x::BigInt, y::BigInt)
-    z = BigInt()
     y = abs(y)
     if y == 1
         return big(0)
     end
-    if (y==0 || ccall((:__gmpz_invert, :libgmp), Cint, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &x, &y) == 0)
+    if (y==0 || ccall((:__gmpz_invert, :libgmp), Cint,
+                      (Ptr{_MPZ}, Ptr{MPZ}, Ptr{MPZ}), &_Z, &MPZ(x), &MPZ(y)) == 0)
         error("no inverse exists")
     end
-    return z
+    return BigInt(_Z)
 end
 
 # More efficient commutative operations
 for (fJ, fC) in ((:+, :add), (:*, :mul), (:&, :and), (:|, :ior), (:$, :xor))
     @eval begin
         function ($fJ)(a::BigInt, b::BigInt, c::BigInt)
-            z = BigInt()
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &a, &b)
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &z, &c)
-            return z
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Ptr{MPZ}), &_Z, &MPZ(a), &MPZ(b))
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}), &_Z, &_Z, &MPZ(c))
+            return BigInt(_Z)
         end
         function ($fJ)(a::BigInt, b::BigInt, c::BigInt, d::BigInt)
-            z = BigInt()
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &a, &b)
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &z, &c)
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &z, &d)
-            return z
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Ptr{MPZ}), &_Z, &MPZ(a), &MPZ(b))
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}), &_Z, &_Z, &MPZ(c))
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}), &_Z, &_Z, &MPZ(d))
+            return BigInt(_Z)
         end
         function ($fJ)(a::BigInt, b::BigInt, c::BigInt, d::BigInt, e::BigInt)
-            z = BigInt()
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &a, &b)
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &z, &c)
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &z, &d)
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z, &z, &e)
-            return z
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Ptr{MPZ}), &_Z, &MPZ(a), &MPZ(b))
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}), &_Z, &_Z, &MPZ(c))
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}), &_Z, &_Z, &MPZ(d))
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}), &_Z, &_Z, &MPZ(e))
+            return BigInt(_Z)
         end
     end
 end
 
 # Basic arithmetic without promotion
 function +(x::BigInt, c::CulongMax)
-    z = BigInt()
-    ccall((:__gmpz_add_ui, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Culong), &z, &x, c)
-    return z
+    ccall((:__gmpz_add_ui, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Culong),
+          &_Z, &MPZ(x), c)
+    return BigInt(_Z)
 end
 +(c::CulongMax, x::BigInt) = x + c
 
 function -(x::BigInt, c::CulongMax)
-    z = BigInt()
-    ccall((:__gmpz_sub_ui, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Culong), &z, &x, c)
-    return z
+    ccall((:__gmpz_sub_ui, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Culong),
+          &_Z, &MPZ(x), c)
+    return BigInt(_Z)
 end
 function -(c::CulongMax, x::BigInt)
-    z = BigInt()
-    ccall((:__gmpz_ui_sub, :libgmp), Void, (Ptr{BigInt}, Culong, Ptr{BigInt}), &z, c, &x)
-    return z
+    ccall((:__gmpz_ui_sub, :libgmp), Void, (Ptr{_MPZ}, Culong, Ptr{MPZ}),
+          &_Z, c, &MPZ(x))
+    return BigInt(_Z)
 end
 +(x::BigInt, c::ClongMax) = c < 0 ? -(x, -(c % Culong)) : x + convert(Culong, c)
 +(c::ClongMax, x::BigInt) = c < 0 ? -(x, -(c % Culong)) : x + convert(Culong, c)
@@ -323,15 +359,15 @@ end
 -(c::ClongMax, x::BigInt) = c < 0 ? -(x + -(c % Culong)) : -(convert(Culong, c), x)
 
 function *(x::BigInt, c::CulongMax)
-    z = BigInt()
-    ccall((:__gmpz_mul_ui, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Culong), &z, &x, c)
-    return z
+    ccall((:__gmpz_mul_ui, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Culong),
+          &_Z, &MPZ(x), c)
+    return BigInt(_Z)
 end
 *(c::CulongMax, x::BigInt) = x * c
 function *(x::BigInt, c::ClongMax)
-    z = BigInt()
-    ccall((:__gmpz_mul_si, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Clong), &z, &x, c)
-    return z
+    ccall((:__gmpz_mul_si, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Clong),
+          &_Z, &MPZ(x), c)
+    return BigInt(_Z)
 end
 *(c::ClongMax, x::BigInt) = x * c
 
@@ -339,9 +375,9 @@ end
 for (fJ, fC) in ((:-, :neg), (:~, :com))
     @eval begin
         function ($fJ)(x::BigInt)
-            z = BigInt()
-            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}), &z, &x)
-            return z
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}),
+                  &_Z, &MPZ(x))
+            return BigInt(_Z)
         end
     end
 end
@@ -349,61 +385,61 @@ end
 function <<(x::BigInt, c::Int)
     c < 0 && throw(DomainError())
     c == 0 && return x
-    z = BigInt()
-    ccall((:__gmpz_mul_2exp, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Culong), &z, &x, c)
-    return z
+    ccall((:__gmpz_mul_2exp, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Culong),
+          &_Z, &MPZ(x), c)
+    return BigInt(_Z)
 end
 
 function >>(x::BigInt, c::Int)
     c < 0 && throw(DomainError())
     c == 0 && return x
-    z = BigInt()
-    ccall((:__gmpz_fdiv_q_2exp, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Culong), &z, &x, c)
-    return z
+    ccall((:__gmpz_fdiv_q_2exp, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Culong),
+          &_Z, &MPZ(x), c)
+    return BigInt(_Z)
 end
 
 >>>(x::BigInt, c::Int) = x >> c
 
-trailing_zeros(x::BigInt) = Int(ccall((:__gmpz_scan1, :libgmp), Culong, (Ptr{BigInt}, Culong), &x, 0))
-trailing_ones(x::BigInt) = Int(ccall((:__gmpz_scan0, :libgmp), Culong, (Ptr{BigInt}, Culong), &x, 0))
+trailing_zeros(x::BigInt) = Int(ccall((:__gmpz_scan1, :libgmp), Culong,
+                                      (Ptr{MPZ}, Culong), &MPZ(x), 0))
+trailing_ones(x::BigInt) = Int(ccall((:__gmpz_scan0, :libgmp), Culong,
+                                     (Ptr{MPZ}, Culong), &MPZ(x), 0))
 
-count_ones(x::BigInt) = Int(ccall((:__gmpz_popcount, :libgmp), Culong, (Ptr{BigInt},), &x))
+count_ones(x::BigInt) = Int(ccall((:__gmpz_popcount, :libgmp), Culong,
+                                  (Ptr{MPZ},), &MPZ(x)))
 
 function divrem(x::BigInt, y::BigInt)
-    z1 = BigInt()
-    z2 = BigInt()
-    ccall((:__gmpz_tdiv_qr, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &z1, &z2, &x, &y)
-    z1, z2
+    ccall((:__gmpz_tdiv_qr, :libgmp), Void, (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}, Ptr{MPZ}), &_Z, &_ZZ, &MPZ(x), &MPZ(y))
+    BigInt(_Z), BigInt(_ZZ)
 end
 
 function cmp(x::BigInt, y::BigInt)
-    ccall((:__gmpz_cmp, :libgmp), Int32, (Ptr{BigInt}, Ptr{BigInt}), &x, &y)
+    ccall((:__gmpz_cmp, :libgmp), Int32, (Ptr{MPZ}, Ptr{MPZ}), &MPZ(x), &MPZ(y))
 end
 function cmp(x::BigInt, y::ClongMax)
-    ccall((:__gmpz_cmp_si, :libgmp), Int32, (Ptr{BigInt}, Clong), &x, y)
+    ccall((:__gmpz_cmp_si, :libgmp), Int32, (Ptr{MPZ}, Clong), &MPZ(x), y)
 end
 function cmp(x::BigInt, y::CulongMax)
-    ccall((:__gmpz_cmp_ui, :libgmp), Int32, (Ptr{BigInt}, Culong), &x, y)
+    ccall((:__gmpz_cmp_ui, :libgmp), Int32, (Ptr{MPZ}, Culong), &MPZ(x), y)
 end
 cmp(x::BigInt, y::Integer) = cmp(x,big(y))
 cmp(x::Integer, y::BigInt) = -cmp(y,x)
 
 function cmp(x::BigInt, y::CdoubleMax)
     isnan(y) && throw(DomainError())
-    ccall((:__gmpz_cmp_d, :libgmp), Int32, (Ptr{BigInt}, Cdouble), &x, y)
+    ccall((:__gmpz_cmp_d, :libgmp), Int32, (Ptr{MPZ}, Cdouble), &MPZ(x), y)
 end
 cmp(x::CdoubleMax, y::BigInt) = -cmp(y,x)
 
 function isqrt(x::BigInt)
-    z = BigInt()
-    ccall((:__gmpz_sqrt, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}), &z, &x)
-    return z
+    ccall((:__gmpz_sqrt, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}), &_Z, &MPZ(x))
+    return BigInt(_Z)
 end
 
 function ^(x::BigInt, y::Culong)
-    z = BigInt()
-    ccall((:__gmpz_pow_ui, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Culong), &z, &x, y)
-    return z
+    ccall((:__gmpz_pow_ui, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Culong),
+          &_Z, &MPZ(x), y)
+    return BigInt(_Z)
 end
 
 function bigint_pow(x::BigInt, y::Integer)
@@ -433,10 +469,10 @@ end
 
 function powermod(x::BigInt, p::BigInt, m::BigInt)
     p < 0 && throw(DomainError())
-    r = BigInt()
     ccall((:__gmpz_powm, :libgmp), Void,
-          (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}),
-          &r, &x, &p, &m)
+          (Ptr{_MPZ}, Ptr{MPZ}, Ptr{MPZ}, Ptr{MPZ}),
+          &_Z, &MPZ(x), &MPZ(p), &MPZ(m))
+    r = BigInt(_Z)
     return m < 0 && r > 0 ? r + m : r # choose sign conistent with mod(x^p, m)
 end
 powermod(x::BigInt, p::Integer, m::BigInt) = powermod(x, BigInt(p), m)
@@ -446,12 +482,10 @@ function gcdx(a::BigInt, b::BigInt)
     if b == 0 # shortcut this to ensure consistent results with gcdx(a,b)
         return a < 0 ? (-a,-one(BigInt),zero(BigInt)) : (a,one(BigInt),zero(BigInt))
     end
-    g = BigInt()
-    s = BigInt()
-    t = BigInt()
     ccall((:__gmpz_gcdext, :libgmp), Void,
-        (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}),
-        &g, &s, &t, &a, &b)
+          (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}, Ptr{MPZ}),
+          &_Z, &_ZZ, &_ZZ, &MPZ(a), &MPZ(b))
+    g, s, t = BigInt(_Z), BigInt(_ZZ), BigInt(_ZZZ)
     if t == 0
         # work around a difference in some versions of GMP
         if a == b
@@ -464,26 +498,25 @@ function gcdx(a::BigInt, b::BigInt)
 end
 
 function sum(arr::AbstractArray{BigInt})
-    n = BigInt(0)
+    _Z.size = 0 # TODO: check this is OK
     for i in arr
         ccall((:__gmpz_add, :libgmp), Void,
-            (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}),
-            &n, &n, &i)
+            (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}),
+            &_Z, &_Z, &MPZ(i))
     end
-    return n
+    return BigInt(_Z)
 end
 
 function factorial(x::BigInt)
     x.size < 0 && return BigInt(0)
-    z = BigInt()
-    ccall((:__gmpz_fac_ui, :libgmp), Void, (Ptr{BigInt}, Culong), &z, x)
-    return z
+    ccall((:__gmpz_fac_ui, :libgmp), Void, (Ptr{_MPZ}, Culong), &_Z, x)
+    return BigInt(_Z)
 end
 
 function binomial(n::BigInt, k::UInt)
-    z = BigInt()
-    ccall((:__gmpz_bin_ui, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Culong), &z, &n, k)
-    return z
+    ccall((:__gmpz_bin_ui, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Culong),
+          &_Z, &MPZ(n), k)
+    return BigInt(_Z)
 end
 binomial(n::BigInt, k::Integer) = k < 0 ? BigInt(0) : binomial(n, UInt(k))
 
@@ -515,7 +548,8 @@ hex(n::BigInt) = base(16, n)
 
 function base(b::Integer, n::BigInt)
     2 <= b <= 62 || throw(ArgumentError("base must be 2 ≤ base ≤ 62, got $b"))
-    p = ccall((:__gmpz_get_str,:libgmp), Ptr{UInt8}, (Ptr{UInt8}, Cint, Ptr{BigInt}), C_NULL, b, &n)
+    p = ccall((:__gmpz_get_str,:libgmp), Ptr{UInt8}, (Ptr{UInt8}, Cint, Ptr{MPZ}),
+              C_NULL, b, &MPZ(n))
     len = Int(ccall(:strlen, Csize_t, (Ptr{UInt8},), p))
     ASCIIString(pointer_to_array(p,len,true))
 end
@@ -523,11 +557,11 @@ end
 function ndigits0z(x::BigInt, b::Integer=10)
     b < 2 && throw(DomainError())
     if ispow2(b)
-        Int(ccall((:__gmpz_sizeinbase,:libgmp), Culong, (Ptr{BigInt}, Int32), &x, b))
+        Int(ccall((:__gmpz_sizeinbase,:libgmp), Culong, (Ptr{MPZ}, Int32), &MPZ(x), b))
     else
         # non-base 2 mpz_sizeinbase might return an answer 1 too big
         # use property that log(b, x) < ndigits(x, b) <= log(b, x) + 1
-        n = Int(ccall((:__gmpz_sizeinbase,:libgmp), Culong, (Ptr{BigInt}, Int32), &x, 2))
+        n = Int(ccall((:__gmpz_sizeinbase,:libgmp), Culong, (Ptr{MPZ}, Int32), &MPZ(x), 2))
         lb = log2(b) # assumed accurate to <1ulp (true for openlibm)
         q,r = divrem(n,lb)
         iq = Int(q)
@@ -543,7 +577,7 @@ function ndigits0z(x::BigInt, b::Integer=10)
 end
 ndigits(x::BigInt, b::Integer=10) = x.size == 0 ? 1 : ndigits0z(x,b)
 
-isprime(x::BigInt, reps=25) = ccall((:__gmpz_probab_prime_p,:libgmp), Cint, (Ptr{BigInt}, Cint), &x, reps) > 0
+isprime(x::BigInt, reps=25) = ccall((:__gmpz_probab_prime_p,:libgmp), Cint, (Ptr{MPZ}, Cint), &MPZ(x), reps) > 0
 
 prevpow2(x::BigInt) = x.size < 0 ? -prevpow2(-x) : (x <= 2 ? x : one(BigInt) << (ndigits(x, 2)-1))
 nextpow2(x::BigInt) = x.size < 0 ? -nextpow2(-x) : (x <= 2 ? x : one(BigInt) << ndigits(x-1, 2))

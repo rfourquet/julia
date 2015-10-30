@@ -3,7 +3,7 @@
 module Random
 
 using Base.dSFMT
-using Base.GMP: GMP_VERSION, Limb
+using Base.GMP: GMP_VERSION, Limb, MPZ, _MPZ, _Z
 
 export srand,
        rand, rand!,
@@ -537,32 +537,30 @@ end
 if GMP_VERSION.major >= 6
     # mpz_limbs_write and mpz_limbs_finish are available only in GMP version 6
     function rand(rng::AbstractRNG, g::RangeGeneratorBigInt)
-        x = BigInt()
         while true
             # note: on CRAY computers, the second argument may be of type Cint (48 bits) and not Clong
-            xd = ccall((:__gmpz_limbs_write, :libgmp), Ptr{Limb}, (Ptr{BigInt}, Clong), &x, g.nlimbs)
+            xd = ccall((:__gmpz_limbs_write, :libgmp), Ptr{Limb}, (Ptr{_MPZ}, Clong), &_Z, g.nlimbs)
             limbs = pointer_to_array(xd, g.nlimbs)
             rand!(rng, limbs)
             limbs[end] &= g.mask
-            ccall((:__gmpz_limbs_finish, :libgmp), Void, (Ptr{BigInt}, Clong), &x, g.nlimbs)
-            x <= g.m && break
+            ccall((:__gmpz_limbs_finish, :libgmp), Void, (Ptr{_MPZ}, Clong), &_Z, g.nlimbs)
+            BigInt(_Z) <= g.m && break
         end
-        ccall((:__gmpz_add, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &x, &x, &g.a)
-        return x
+        ccall((:__gmpz_add, :libgmp), Void, (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}), &_Z, &_Z, &MPZ(g.a))
+        return BigInt(_Z)
     end
 else
     function rand(rng::AbstractRNG, g::RangeGeneratorBigInt)
-        x = BigInt()
         while true
             rand!(rng, g.limbs)
             g.limbs[end] &= g.mask
             ccall((:__gmpz_import, :libgmp), Void,
-                  (Ptr{BigInt}, Csize_t, Cint, Csize_t, Cint, Csize_t, Ptr{Limb}),
-                  &x, length(g.limbs), -1, sizeof(Limb), 0, 0, g.limbs)
-            x <= g.m && break
+                  (Ptr{_MPZ}, Csize_t, Cint, Csize_t, Cint, Csize_t, Ptr{Limb}),
+                  &_Z, length(g.limbs), -1, sizeof(Limb), 0, 0, g.limbs)
+            BigInt(_Z) <= g.m && break
         end
-        ccall((:__gmpz_add, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &x, &x, &g.a)
-        return x
+        ccall((:__gmpz_add, :libgmp), Void, (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{MPZ}), &_Z, &_Z, &g.a)
+        return BigInt(_Z)
     end
 end
 
