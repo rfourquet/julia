@@ -37,23 +37,20 @@ else
 end
 
 
+immutable _withsize end
+
 type BigInt <: Integer
     alloc::Cint
     size::Cint
     d::Ptr{Limb}
-    function BigInt(::Val{:allocbits}, nbits)
-        z = new()
-        if nbits == 0
-            ccall((:__gmpz_init,:libgmp), Void, (Ptr{BigInt},), &z)
-        else
-            ccall((:__gmpz_init2,:libgmp), Void, (Ptr{BigInt}, Culong), &z, nbits)
-        end
+    function BigInt(::_withsize=_withsize(), nbits=1)
+        z = new(Cint(0), Cint(0), C_NULL)
+        # WARNING: nbits == 0 is unsafe, some mpz_* functions expect an abs size >= 1
+        nbits > 0 && ccall((:__gmpz_init2,:libgmp), Void, (Ptr{BigInt}, Culong), &z, nbits)
         finalizer(z, _gmp_clear_func)
         return z
     end
 end
-
-BigInt() = BigInt(Val{:allocbits}(), 0)
 
 _gmp_clear_func = C_NULL
 _mpfr_clear_func = C_NULL

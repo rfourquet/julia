@@ -3,7 +3,7 @@
 module Random
 
 using Base.dSFMT
-using Base.GMP: Limb
+using Base.GMP: Limb, _withsize
 
 export srand,
        rand, rand!,
@@ -525,7 +525,7 @@ function rand{T<:Integer, U<:Unsigned}(rng::AbstractRNG, g::RangeGeneratorInt{T,
 end
 
 function rand(rng::AbstractRNG, g::RangeGeneratorBigInt)
-    x = BigInt(Val{:allocbits}(), g.nlimbsmax*8*sizeof(Limb))
+    x = BigInt(_withsize(), g.nlimbsmax*8*sizeof(Limb))
     limbs = pointer_to_array(x.d, g.nlimbs)
     while true
         rand!(rng, limbs)
