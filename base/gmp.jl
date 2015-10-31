@@ -53,12 +53,13 @@ end
 
 BigInt() = BigInt(0)
 
-immutable MPZ <: Integer
+immutable MPZ1 <: Integer
     alloc::Cint
     size::Cint
     d::Ptr{Limb}
-    MPZ(z::BigInt) = new(length(z.d), z.size, pointer(z.d)) # should be immutable
+    MPZ1(z::BigInt) = new(length(z.d), z.size, pointer(z.d)) # should be immutable
 end
+
 
 type _MPZ <: Integer
     alloc::Cint
@@ -70,13 +71,29 @@ type _MPZ <: Integer
 #        finalizer(b, _gmp_clear_func)
         return _z
     end
+    _MPZ(z::BigInt) = new(length(z.d), z.size, pointer(z.d)) # should be immutable
 end
+
+typealias MPZ _MPZ
 
 _finish(z::BigInt, _z::_MPZ) = z.size = _z.size
 
 _reinit(_z::_MPZ) = ccall((:__gmpz_init,:libgmp), Void, (Ptr{_MPZ},), &_z)
 _realloc2(_z::_MPZ, n) = ccall((:__gmpz_realloc2,:libgmp), Void, (Ptr{_MPZ}, Culong), &_z, n)
 
+function _swap(_z::_MPZ, n)
+    r = _z.d
+    a = _z.alloc
+    _z.d = pointer(n.d)
+    _z.size = n.size
+    _z.alloc = _z.size
+    r, a
+end
+function _restore(_z::_MPZ, p, a)
+    _z.d = p
+    _z.size = 0
+    _z.alloc = a
+end
 
 function _reinit2(_z::_MPZ)  #ccall((:__gmpz_init,:libgmp), Void, (Ptr{_MPZ},), &_z)
     _z.alloc = 0
@@ -85,14 +102,27 @@ function _reinit2(_z::_MPZ)  #ccall((:__gmpz_init,:libgmp), Void, (Ptr{_MPZ},), 
 end
 
 function BigInt(_z::_MPZ)
-    z = BigInt(_z.size, pointer_to_array(_z.d, _z.alloc, true))
-    _reinit(_z)
+    # z = BigInt(_z.size, pointer_to_array(_z.d, _z.alloc, true))
+    z = BigInt(_z.size, Limbs(abs(_z.size)))
+    @inbounds for i in 1:length(z.d)
+        z.d[i] = unsafe_load(_z.d, i)
+    end
+
+   # _reinit(_z)
     z
 end
 
 const _Z = _MPZ()
 const _ZZ = _MPZ()
 const _ZZZ = _MPZ()
+const _Z0 = _MPZ()
+const _Z1 = _MPZ()
+@inline function wrapz(_z::_MPZ, n::BigInt)
+    _z.size = n.size
+    _z.alloc = length(n.d)
+    _z.d = pointer(n.d)
+    _z
+end
 
 _gmp_clear_func = C_NULL
 _mpfr_clear_func = C_NULL
@@ -285,6 +315,26 @@ convert(::Type{Float32}, n::BigInt) = Float32(n,RoundNearest)
 convert(::Type{Float16}, n::BigInt) = Float16(n,RoundNearest)
 
 promote_rule{T<:Integer}(::Type{BigInt}, ::Type{T}) = BigInt
+if true
+# Binary ops
+for (fJ, fC) in ((:+, :add), (:-,:sub), (:*, :mul),
+                 (:fld, :fdiv_q), (:div, :tdiv_q), (:mod, :fdiv_r), (:rem, :tdiv_r),
+                 (:gcd, :gcd), (:lcm, :lcm),
+                 (:&, :and), (:|, :ior), (:$, :xor))
+    @eval begin
+        function ($fJ)(x::BigInt, y::BigInt)
+            # r1, a1 = _swap(_ZZ, x)
+            # r2, a2 = _swap(_ZZZ, y)
+            ccall(($(string(:__gmpz_,fC)), :libgmp), Void,
+                  (Ptr{_MPZ}, Ptr{_MPZ}, Ptr{_MPZ}),
+                  &_Z, &wrapz(_Z0, x), &wrapz(_Z1, y))
+            # _restore(_ZZ, r1, a1)
+            # _restore(_ZZZ, r2, a2)
+            return BigInt(_Z)
+        end
+    end
+end
+else
 
 # Binary ops
 for (fJ, fC) in ((:+, :add), (:-,:sub), (:*, :mul),
@@ -293,7 +343,6 @@ for (fJ, fC) in ((:+, :add), (:-,:sub), (:*, :mul),
                  (:&, :and), (:|, :ior), (:$, :xor))
     @eval begin
         function ($fJ)(x::BigInt, y::BigInt)
-
             ccall(($(string(:__gmpz_,fC)), :libgmp), Void,
                   (Ptr{_MPZ}, Ptr{MPZ}, Ptr{MPZ}),
                   &_Z, &MPZ(x), &MPZ(y))
@@ -302,6 +351,7 @@ for (fJ, fC) in ((:+, :add), (:-,:sub), (:*, :mul),
     end
 end
 
+end
 function invmod(x::BigInt, y::BigInt)
     y = abs(y)
     if y == 1
@@ -338,10 +388,12 @@ for (fJ, fC) in ((:+, :add), (:*, :mul), (:&, :and), (:|, :ior), (:$, :xor))
     end
 end
 
+
 # Basic arithmetic without promotion
 function +(x::BigInt, c::CulongMax)
-    ccall((:__gmpz_add_ui, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ}, Culong),
-          &_Z, &MPZ(x), c)
+    ccall((:__gmpz_add_ui, :libgmp), Void, (Ptr{_MPZ}, Ptr{MPZ1}, Culong),
+          # &_Z, &wrapz(_Z0, x), c)
+          &_Z, &MPZ1(x), c)
     return BigInt(_Z)
 end
 +(c::CulongMax, x::BigInt) = x + c
