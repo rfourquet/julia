@@ -978,10 +978,12 @@ references in `r` are replaced with the corresponding matched text.
 replace
 
 """
-    randexp([rng], [dims...])
+    randexp([rng], [T], [dims...])
 
-Generate a random number according to the exponential distribution with scale 1. Optionally
-generate an array of such random numbers.
+Generate a random number of type `T` according to the exponential distribution with scale 1.
+The type `T` can be `Float16`, `Float32`, or `Float64` (the default).
+Optionally generate an array of such random numbers.
+
 """
 randexp
 
@@ -2073,9 +2075,10 @@ Right bit shift operator, preserving the sign of `x`.
 Base.(:(>>))
 
 """
-    randn([rng], [dims...])
+    randn([rng], [T], [dims...])
 
-Generate a normally-distributed random number with mean 0 and standard deviation 1.
+Generate a normally-distributed random number of type `T` with mean 0 and standard deviation 1.
+The type `T` can be `Float16`, `Float32`, or `Float64` (the default).
 Optionally generate an array of normally-distributed random numbers.
 """
 randn
@@ -6823,9 +6826,10 @@ the topmost backend that does not throw a `MethodError`).
 pushdisplay
 
 """
-    randexp!([rng], A::Array{Float64,N})
+    randexp!([rng], A::Array{T,N})
 
 Fill the array `A` with random numbers following the exponential distribution (with scale 1).
+The type `T` can be `Float16`, `Float32`, or `Float64`.
 """
 randexp!
 
@@ -10081,10 +10085,11 @@ no effect outside of compilation.
 include_dependency
 
 """
-    randn!([rng], A::Array{Float64,N})
+    randn!([rng], A::Array{T,N})
 
 Fill the array `A` with normally-distributed (mean 0, standard deviation 1) random numbers.
-Also see the rand function.
+The type `T` can be `Float16`, `Float32`, or `Float64`.
+Also see the `rand` function.
 """
 randn!
 

@@ -608,29 +608,29 @@ As ``BigInt`` represents unbounded integers, the interval must be specified (e.g
 
    Generate a ``BitArray`` of random boolean values.
 
-.. function:: randn([rng], [dims...])
+.. function:: randn([rng], [T], [dims...])
 
    .. Docstring generated from Julia source
 
-   Generate a normally-distributed random number with mean 0 and standard deviation 1. Optionally generate an array of normally-distributed random numbers.
+   Generate a normally-distributed random number of type ``T`` with mean 0 and standard deviation 1. The type ``T`` can be ``Float16``\ , ``Float32``\ , or ``Float64`` (the default). Optionally generate an array of normally-distributed random numbers.
 
-.. function:: randn!([rng], A::Array{Float64,N})
-
-   .. Docstring generated from Julia source
-
-   Fill the array ``A`` with normally-distributed (mean 0, standard deviation 1) random numbers. Also see the rand function.
-
-.. function:: randexp([rng], [dims...])
+.. function:: randn!([rng], A::Array{T,N})
 
    .. Docstring generated from Julia source
 
-   Generate a random number according to the exponential distribution with scale 1. Optionally generate an array of such random numbers.
+   Fill the array ``A`` with normally-distributed (mean 0, standard deviation 1) random numbers. The type ``T`` can be ``Float16``\ , ``Float32``\ , or ``Float64``\ . Also see the ``rand`` function.
 
-.. function:: randexp!([rng], A::Array{Float64,N})
+.. function:: randexp([rng], [T], [dims...])
 
    .. Docstring generated from Julia source
 
-   Fill the array ``A`` with random numbers following the exponential distribution (with scale 1).
+   Generate a random number of type ``T`` according to the exponential distribution with scale 1. The type ``T`` can be ``Float16``\ , ``Float32``\ , or ``Float64`` (the default). Optionally generate an array of such random numbers.
+
+.. function:: randexp!([rng], A::Array{T,N})
+
+   .. Docstring generated from Julia source
+
+   Fill the array ``A`` with random numbers following the exponential distribution (with scale 1). The type ``T`` can be ``Float16``\ , ``Float32``\ , or ``Float64``\ .
 
 .. function:: randjump(r::MersenneTwister, jumps, [jumppoly]) -> Vector{MersenneTwister}
 

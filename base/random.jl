@@ -1126,19 +1126,6 @@ function randn_unlikely(rng, idx, rabs, x)
     end
 end
 
-function randn!(rng::AbstractRNG, A::AbstractArray{Float64})
-    for i in eachindex(A)
-        @inbounds A[i] = randn(rng)
-    end
-    A
-end
-
-randn!(A::AbstractArray{Float64}) = randn!(GLOBAL_RNG, A)
-randn(dims::Dims) = randn!(Array(Float64, dims))
-randn(dims::Integer...) = randn!(Array(Float64, dims...))
-randn(rng::AbstractRNG, dims::Dims) = randn!(rng, Array(Float64, dims))
-randn(rng::AbstractRNG, dims::Integer...) = randn!(rng, Array(Float64, dims...))
-
 @inline function randexp(rng::AbstractRNG=GLOBAL_RNG)
     @inbounds begin
         ri = rand_ui52(rng)
@@ -1159,20 +1146,40 @@ function randexp_unlikely(rng, idx, x)
     end
 end
 
-function randexp!(rng::AbstractRNG, A::Array{Float64})
-    for i in eachindex(A)
-        @inbounds A[i] = randexp(rng)
+let Floats = Union{Float16,Float32,Float64}
+    for randfun in [:randn, :randexp]
+        randfun! = symbol(randfun, :!)
+        @eval begin
+
+            # scalars
+
+            $randfun{F<:$Floats}(rng::AbstractRNG, ::Type{F}) = convert(F, $randfun(rng))
+            $randfun{F<:$Floats}(::Type{F}) = $randfun(GLOBAL_RNG, F)
+
+            # filling arrays
+
+            function $randfun!{F<:$Floats}(rng::AbstractRNG, A::AbstractArray{F})
+                for i in eachindex(A)
+                    @inbounds A[i] = $randfun(rng)
+                end
+                A
+            end
+
+            $randfun!{F<:$Floats}(A::AbstractArray{F}) = $randfun!(GLOBAL_RNG, A)
+
+            # generating arrays
+
+            $randfun{F<:$Floats}(rng::AbstractRNG, ::Type{F}, dims::Dims)       = $randfun!(rng, Array(F, dims))
+            $randfun{F<:$Floats}(rng::AbstractRNG, ::Type{F}, dims::Integer...) = $randfun!(rng, Array(F, dims...))
+            $randfun{F<:$Floats}(                  ::Type{F}, dims::Dims)       = $randfun(GLOBAL_RNG, F, dims)
+            $randfun{F<:$Floats}(                  ::Type{F}, dims::Integer...) = $randfun(GLOBAL_RNG, F, dims...)
+            $randfun(            rng::AbstractRNG,            dims::Dims)       = $randfun(rng, Float64, dims)
+            $randfun(            rng::AbstractRNG,            dims::Integer...) = $randfun(rng, Float64, dims...)
+            $randfun(                                         dims::Dims)       = $randfun(GLOBAL_RNG, Float64, dims)
+            $randfun(                                         dims::Integer...) = $randfun(GLOBAL_RNG, Float64, dims...)
+        end
     end
-    A
 end
-
-randexp!(A::Array{Float64}) = randexp!(GLOBAL_RNG, A)
-randexp(dims::Dims) = randexp!(Array(Float64, dims))
-randexp(dims::Int...) = randexp!(Array(Float64, dims))
-randexp(rng::AbstractRNG, dims::Dims) = randexp!(rng, Array(Float64, dims))
-randexp(rng::AbstractRNG, dims::Int...) = randexp!(rng, Array(Float64, dims))
-
-
 ## random UUID generation
 
 immutable UUID
