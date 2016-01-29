@@ -301,8 +301,8 @@ end
 # test all rand APIs
 
 for rng in ([], [MersenneTwister()], [RandomDevice()])
-    types = [Base.BitInteger_types..., Bool, Char, Float16, Float32, Float64]
-    ftypes = [Float16, Float32, Float64]
+    types = [Base.BitInteger_types..., Bool, Char, Float16, Float32, Float64, Complex{Float64}]
+    ftypes = [Float16, Float32, Float64, Complex{Float64}]
     b2 = big(2)
     u3 = UInt(3)
     for f in [rand, randn, randexp]

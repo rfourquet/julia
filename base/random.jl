@@ -1146,7 +1146,10 @@ function randexp_unlikely(rng, idx, x)
     end
 end
 
-let Floats = Union{Float16,Float32,Float64}
+let Floats = Union{Float16,Float32,Float64},
+    Complexs = Union{Complex{Float16},Complex{Float32},Complex{Float64}},
+    Numbers = Union{Floats.types..., Complexs.types...}
+
     for randfun in [:randn, :randexp]
         randfun! = symbol(randfun, :!)
         @eval begin
@@ -1156,27 +1159,31 @@ let Floats = Union{Float16,Float32,Float64}
             $randfun{F<:$Floats}(rng::AbstractRNG, ::Type{F}) = convert(F, $randfun(rng))
             $randfun{F<:$Floats}(::Type{F}) = $randfun(GLOBAL_RNG, F)
 
+            $randfun{F<:$Floats}(rng::AbstractRNG, ::Type{Complex{F}}) =
+                Complex(randn(rng, F), randn(rng, F)) * 0.707106781186547524400844362104849
+            $randfun{F<:$Floats}(::Type{Complex{F}}) = $randfun(GLOBAL_RNG, F)
+
             # filling arrays
 
-            function $randfun!{F<:$Floats}(rng::AbstractRNG, A::AbstractArray{F})
+            function $randfun!{F<:$Numbers}(rng::AbstractRNG, A::AbstractArray{F})
                 for i in eachindex(A)
                     @inbounds A[i] = $randfun(rng)
                 end
                 A
             end
 
-            $randfun!{F<:$Floats}(A::AbstractArray{F}) = $randfun!(GLOBAL_RNG, A)
+            $randfun!{F<:$Numbers}(A::AbstractArray{F}) = $randfun!(GLOBAL_RNG, A)
 
             # generating arrays
 
-            $randfun{F<:$Floats}(rng::AbstractRNG, ::Type{F}, dims::Dims)       = $randfun!(rng, Array(F, dims))
-            $randfun{F<:$Floats}(rng::AbstractRNG, ::Type{F}, dims::Integer...) = $randfun!(rng, Array(F, dims...))
-            $randfun{F<:$Floats}(                  ::Type{F}, dims::Dims)       = $randfun(GLOBAL_RNG, F, dims)
-            $randfun{F<:$Floats}(                  ::Type{F}, dims::Integer...) = $randfun(GLOBAL_RNG, F, dims...)
-            $randfun(            rng::AbstractRNG,            dims::Dims)       = $randfun(rng, Float64, dims)
-            $randfun(            rng::AbstractRNG,            dims::Integer...) = $randfun(rng, Float64, dims...)
-            $randfun(                                         dims::Dims)       = $randfun(GLOBAL_RNG, Float64, dims)
-            $randfun(                                         dims::Integer...) = $randfun(GLOBAL_RNG, Float64, dims...)
+            $randfun{F<:$Numbers}(rng::AbstractRNG, ::Type{F}, dims::Dims)       = $randfun!(rng, Array(F, dims))
+            $randfun{F<:$Numbers}(rng::AbstractRNG, ::Type{F}, dims::Integer...) = $randfun!(rng, Array(F, dims...))
+            $randfun{F<:$Numbers}(                  ::Type{F}, dims::Dims)       = $randfun(GLOBAL_RNG, F, dims)
+            $randfun{F<:$Numbers}(                  ::Type{F}, dims::Integer...) = $randfun(GLOBAL_RNG, F, dims...)
+            $randfun(             rng::AbstractRNG,            dims::Dims)       = $randfun(rng, Float64, dims)
+            $randfun(             rng::AbstractRNG,            dims::Integer...) = $randfun(rng, Float64, dims...)
+            $randfun(                                          dims::Dims)       = $randfun(GLOBAL_RNG, Float64, dims)
+            $randfun(                                          dims::Integer...) = $randfun(GLOBAL_RNG, Float64, dims...)
         end
     end
 end
