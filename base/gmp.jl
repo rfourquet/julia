@@ -8,7 +8,8 @@ import Base: *, +, -, /, <, <<, >>, >>>, <=, ==, >, >=, ^, (~), (&), (|), ($),
              binomial, cmp, convert, div, divrem, factorial, fld, gcd, gcdx, lcm, mod,
              ndigits, promote_rule, rem, show, isqrt, string, powermod,
              sum, trailing_zeros, trailing_ones, count_ones, base, tryparse_internal,
-             bin, oct, dec, hex, isequal, invmod, prevpow2, nextpow2, ndigits0z, widen, signed, unsafe_trunc, trunc
+             bin, oct, dec, hex, isequal, invmod, prevpow2, nextpow2, ndigits0z,
+             ndigits0znb, widen, signed, unsafe_trunc, trunc
 
 if Clong == Int32
     typealias ClongMax Union{Int8, Int16, Int32}
@@ -526,6 +527,7 @@ end
 
 function ndigits0z(x::BigInt, b::Integer=10)
     b < 2 && throw(DomainError())
+    x.size == 0 && return 0 # for consistency with other ndigits0z methods
     if ispow2(b) && 2 <= b <= 62 # GMP assumes b is in this range
         Int(ccall((:__gmpz_sizeinbase,:libgmp), Csize_t, (Ptr{BigInt}, Cint), &x, b))
     else
@@ -545,7 +547,6 @@ function ndigits0z(x::BigInt, b::Integer=10)
         end
     end
 end
-ndigits(x::BigInt, b::Integer=10) = x.size == 0 ? 1 : ndigits0z(x,b)
 
 prevpow2(x::BigInt) = x.size < 0 ? -prevpow2(-x) : (x <= 2 ? x : one(BigInt) << (ndigits(x, 2)-1))
 nextpow2(x::BigInt) = x.size < 0 ? -nextpow2(-x) : (x <= 2 ? x : one(BigInt) << ndigits(x-1, 2))

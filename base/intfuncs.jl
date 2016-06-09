@@ -216,10 +216,13 @@ function ndigits0z(x::UInt128)
     return n + ndigits0z(UInt64(x))
 end
 ndigits0z(x::Integer) = ndigits0z(unsigned(abs(x)))
+ndigits(x::Integer) = x==0 ? 1 : ndigits0z(x)
 
 const ndigits_max_mul = Core.sizeof(Int) == 4 ? 69000000 : 290000000000000000
 
-function ndigits0znb(n::Signed, b::Int)
+# The suffix "nb" stands for "negative base"
+function ndigits0znb(n::Integer, b::Integer)
+    # precondition: b < -1 && !(typeof(n) <: Unsigned)
     d = 0
     while n != 0
         n = cld(n,b)
@@ -228,36 +231,38 @@ function ndigits0znb(n::Signed, b::Int)
     return d
 end
 
+ndigits0znb(n::Unsigned, b::Integer) = ndigits0znb(signed(n), b)
+
 function ndigits0z(n::Unsigned, b::Int)
+    # precondition: b > 1
     d = 0
-    if b < 0
-        d = ndigits0znb(signed(n), b)
-    else
-        b == 2  && return (sizeof(n)<<3-leading_zeros(n))
-        b == 8  && return div((sizeof(n)<<3)-leading_zeros(n)+2,3)
-        b == 16 && return (sizeof(n)<<1)-(leading_zeros(n)>>2)
-        b == 10 && return ndigits0z(n)
-        while ndigits_max_mul < n
-            n = div(n,b)
-            d += 1
-        end
-        m = 1
-        while m <= n
-            m *= b
-            d += 1
-        end
+    b == 2  && return (sizeof(n)<<3-leading_zeros(n))
+    b == 8  && return div((sizeof(n)<<3)-leading_zeros(n)+2,3)
+    b == 16 && return (sizeof(n)<<1)-(leading_zeros(n)>>2)
+    b == 10 && return ndigits0z(n)
+    while ndigits_max_mul < n
+        n = div(n,b)
+        d += 1
+    end
+    m = 1
+    while m <= n
+        m *= b
+        d += 1
     end
     return d
 end
-ndigits0z(x::Integer, b::Integer) = ndigits0z(unsigned(abs(x)),Int(b))
 
-ndigitsnb(x::Integer, b::Integer) = x==0 ? 1 : ndigits0znb(x, b)
+ndigits0z(x::Integer, b::Integer) = ndigits0z(unsigned(abs(x)), Int(b))
 
-ndigits(x::Unsigned, b::Integer) = x==0 ? 1 : ndigits0z(x,Int(b))
-ndigits(x::Unsigned)             = x==0 ? 1 : ndigits0z(x)
-
-ndigits(x::Integer, b::Integer) = b >= 0 ? ndigits(unsigned(abs(x)),Int(b)) : ndigitsnb(x, b)
-ndigits(x::Integer) = ndigits(unsigned(abs(x)))
+function ndigits(x::Integer, b::Integer)
+    if b < -1
+        x == 0 ? 1 : ndigits0znb(x, b)
+    elseif b > 1
+        x == 0 ? 1 : ndigits0z(x, b)
+    else
+        throw(DomainError())
+    end
+end
 
 ## integer to string functions ##
 
@@ -352,8 +357,7 @@ bits(x::Union{Int128,UInt128})            = bin(reinterpret(UInt128,x),128)
 digits{T<:Integer}(n::Integer, base::T=10, pad::Integer=1) = digits(T, n, base, pad)
 
 function digits{T<:Integer}(::Type{T}, n::Integer, base::Integer=10, pad::Integer=1)
-    2 <= base || throw(ArgumentError("base must be ≥ 2, got $base"))
-    digits!(zeros(T, max(pad, ndigits0z(n,base))), n, base)
+    digits!(zeros(T, max(pad, ndigits(n,base))), n, base)
 end
 
 function digits!{T<:Integer}(a::AbstractArray{T,1}, n::Integer, base::Integer=10)
