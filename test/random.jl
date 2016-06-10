@@ -1,8 +1,26 @@
 # This file is a part of Julia. License is MIT: http://julialang.org/license
 
+# test guarded srand
+let seed = rand(Int)
+    orig = copy(Base.GLOBAL_RNG)
+    @test srand(()->rand(), seed) == srand(()->rand(), seed)
+    @test srand(()->rand(Int), seed) == srand(()->rand(Int), seed)
+    a, b = srand() do
+        rand(), rand(Int)
+    end::Tuple{Float64,Int}
+    c, d = srand() do
+        rand(), rand(Int)
+    end::Tuple{Float64,Int}
+    @test a != c && b != d
+    @test orig == Base.GLOBAL_RNG
+end
+
 # Issue #6573
-srand(0); rand(); x = rand(384);
-@test find(x .== rand()) == []
+srand(0) do
+    rand()
+    x = rand(384)
+    @test find(x .== rand()) == []
+end
 
 @test rand() != rand()
 @test 0.0 <= rand() < 1.0
@@ -104,10 +122,11 @@ for T in [UInt32, UInt64, UInt128, Int128]
     @test size(r) == (1, 2)
     @test typeof(r) == Matrix{BigInt}
 
-    srand(0)
-    r = rand(s)
-    srand(0)
-    @test rand(s) == r
+    srand(0) do
+        r = rand(s)
+        srand(0)
+        @test rand(s) == r
+    end
 end
 
 # Test ziggurat tables
@@ -195,16 +214,19 @@ randmtzig_fill_ziggurat_tables()
 
 #same random numbers on for small ranges on all systems
 
-seed = rand(UInt) #leave state nondeterministic as above
-srand(seed)
-r = map(Int64,rand(map(Int32,97:122)))
-srand(seed)
-@test r == rand(map(Int64,97:122))
 
-srand(seed)
-r = map(UInt64,rand(map(UInt32,97:122)))
-srand(seed)
-@test r == rand(map(UInt64,97:122))
+srand() do
+    seed = rand(UInt)
+    srand(seed)
+    r = map(Int64,rand(map(Int32,97:122)))
+    srand(seed)
+    @test r == rand(map(Int64,97:122))
+
+    srand(seed)
+    r = map(UInt64,rand(map(UInt32,97:122)))
+    srand(seed)
+    @test r == rand(map(UInt64,97:122))
+end
 
 @test all([div(0x000100000000,k)*k - 1 == Base.Random.RangeGenerator(map(UInt64,1:k)).u for k in 13 .+ Int64(2).^(1:30)])
 @test all([div(0x000100000000,k)*k - 1 == Base.Random.RangeGenerator(map(Int64,1:k)).u for k in 13 .+ Int64(2).^(1:30)])

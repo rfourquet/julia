@@ -2,7 +2,7 @@
 
 @doc """
 
-`tests, net_on = choosetests(choices)` selects a set of tests to be
+`tests, net_on, seed = choosetests(choices)` selects a set of tests to be
 run. `choices` should be a vector of test names; if empty or set to
 `["all"]`, all tests are selected.
 
@@ -14,6 +14,11 @@ Upon return, `tests` is a vector of fully-expanded test names, and
 `net_on` is true if networking is available (required for some tests).
 """ ->
 function choosetests(choices = [])
+
+    seed = startswith(choices[1], "--seed=") ?
+        parse(UInt128, shift!(choices)[8:end]) :
+        rand(RandomDevice(), UInt128)
+
     testnames = [
         "linalg", "subarray", "core", "inference", "keywordargs", "numbers",
         "printf", "char", "string", "triplequote", "unicode",
@@ -100,5 +105,5 @@ function choosetests(choices = [])
 
     filter!(x -> !(x in skip_tests), tests)
 
-    tests, net_on
+    tests, net_on, seed
 end

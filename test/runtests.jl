@@ -1,7 +1,7 @@
 # This file is a part of Julia. License is MIT: http://julialang.org/license
 
 include("choosetests.jl")
-tests, net_on = choosetests(ARGS)
+tests, net_on, seed = choosetests(ARGS)
 tests = unique(tests)
 
 const max_worker_rss = if haskey(ENV, "JULIA_TEST_MAXRSS_MB")
@@ -24,6 +24,7 @@ move_to_node1("compile")
 max_worker_rss != typemax(Csize_t) && move_to_node1("parallel")
 
 cd(dirname(@__FILE__)) do
+    println(@__FILE__)
     n = 1
     if net_on
         n = min(8, Sys.CPU_CORES, length(tests))
@@ -41,12 +42,11 @@ cd(dirname(@__FILE__)) do
                     test = shift!(tests)
                     local resp
                     try
-                        resp = remotecall_fetch(t -> runtests(t), p, test)
+                        resp = remotecall_fetch(t -> runtests(t, seed), p, test)
                     catch e
                         resp = e
                     end
                     push!(results, (test, resp))
-
                     if (isa(resp, Integer) && (resp > max_worker_rss)) || isa(resp, Exception)
                         if n > 1
                             rmprocs(p, waitfor=0.5)
@@ -54,18 +54,19 @@ cd(dirname(@__FILE__)) do
                             remotecall_fetch(()->include("testdefs.jl"), p)
                         else
                             # single process testing, bail if mem limit reached, or, on an exception.
-                            isa(resp, Exception) ? rethrow(resp) : error("Halting tests. Memory limit reached : $resp > $max_worker_rss")
+                            #isa(resp, Exception) ? rethrow(resp) : error("Halting tests. Memory limit reached : $resp > $max_worker_rss")
+                            isa(resp, Exception) || error("Halting tests. Memory limit reached : $resp > $max_worker_rss")
                         end
                     end
                 end
             end
         end
     end
-
     errors = filter(x->isa(x[2], Exception), results)
     if length(errors) > 0
         for err in errors
             println("Exception running test $(err[1]) :")
+            println("GLOBAL_RNG was seeded via `srand(0x$(hex(seed)))`")
             showerror(STDERR, err[2])
             println()
         end
@@ -76,8 +77,9 @@ cd(dirname(@__FILE__)) do
     n > 1 && rmprocs(workers(), waitfor=5.0)
 
     for t in node1_tests
-        n > 1 && print("\tFrom worker 1:\t")
-        runtests(t)
+        n > 1 && print("\tFrom worker 1 :\t")
+        print("GLOBAL_RNG is seeded via `srand(0x$(hex(seed)))`")
+        runtests(t, seed)
     end
 
     println("    \033[32;1mSUCCESS\033[0m")

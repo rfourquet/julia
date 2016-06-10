@@ -4,7 +4,7 @@ module Random
 
 using Base.dSFMT
 using Base.GMP: GMP_VERSION, Limb
-import Base.copymutable
+import Base: copymutable, copy, copy!, ==
 
 export srand,
        rand, rand!,
@@ -64,14 +64,40 @@ rand(rng::RandomDevice, ::Type{CloseOpen}) = rand(rng, Close1Open2) - 1.0
 const MTCacheLength = dsfmt_get_min_array_size()
 
 type MersenneTwister <: AbstractRNG
+    seed::Vector{UInt32}
     state::DSFMT_state
     vals::Vector{Float64}
     idx::Int
-    seed::Vector{UInt32}
+end
 
-    MersenneTwister(state::DSFMT_state, seed) = new(state, Array{Float64}(MTCacheLength), MTCacheLength, seed)
-    MersenneTwister(seed) = srand(new(DSFMT_state(), Array{Float64}(MTCacheLength)), seed)
-    MersenneTwister() = MersenneTwister(0)
+MersenneTwister(seed::Vector{UInt32}, state::DSFMT_state) =
+    MersenneTwister(seed, state, zeros(Float64, MTCacheLength), MTCacheLength)
+
+MersenneTwister(seed=0) = (s = make_seed(seed); srand(MersenneTwister(s, DSFMT_state()), s))
+
+function copy!(dst::MersenneTwister, src::MersenneTwister)
+    copy!(resize!(dst.seed, length(src.seed)), src.seed)
+    copy!(dst.state, src.state)
+    copy!(dst.vals, src.vals)
+    dst.idx = src.idx
+    dst
+end
+
+copy(src::MersenneTwister) =
+    MersenneTwister(copy(src.seed), copy(src.state), copy(src.vals), src.idx)
+
+==(r1::MersenneTwister, r2::MersenneTwister) =
+    r1.seed == r2.seed && r1.state == r2.state && isequal(r1.vals, r2.vals) && r1.idx == r2.idx
+
+function Base.show(io::IO, r::MersenneTwister)
+    limit::Bool = get(io, :limit, false)
+    if limit
+        print(io, "MersenneTwister(seed=$(r.seed), " *
+              "hash(state)=0x$(hex(hash(r.state.val))), " *
+              "hash(vals)=0x$(hex(hash(r.vals))), idx=$(r.idx))")
+    else
+        print(io, "MersenneTwister$((r.seed, r.state, r.vals, r.idx))")
+    end
 end
 
 ## Low level API for MersenneTwister
@@ -117,7 +143,7 @@ function randjump(mt::MersenneTwister, jumps::Integer, jumppoly::AbstractString)
     push!(mts, mt)
     for i in 1:jumps-1
         cmt = mts[end]
-        push!(mts, MersenneTwister(dSFMT.dsfmt_jump(cmt.state, jumppoly),  cmt.seed))
+        push!(mts, MersenneTwister(cmt.seed, dSFMT.dsfmt_jump(cmt.state, jumppoly)))
     end
     return mts
 end
@@ -153,7 +179,13 @@ function make_seed()
 end
 
 function make_seed(n::Integer)
-    n < 0 && throw(DomainError())
+    if applicable(typemax, typeof(n))
+        n < 0 && return make_seed(unsigned(n))
+    elseif n < 0
+        n = (-n) << 1 + 1
+    else
+        n = n << 1
+    end
     seed = UInt32[]
     while true
         push!(seed, n & 0xffffffff)
@@ -173,6 +205,18 @@ end
 srand(r::MersenneTwister) = srand(r, make_seed())
 srand(r::MersenneTwister, n::Integer) = srand(r, make_seed(n))
 srand(r::MersenneTwister, filename::AbstractString, n::Integer=4) = srand(r, make_seed(filename, n))
+
+## guarded srand()
+
+function srand(f, r::MersenneTwister, args...)
+    old = copy(r)
+    srand(r, args...)
+    res = f()
+    copy!(r, old)
+    res
+end
+
+srand(f, args...) = srand(f, GLOBAL_RNG, args...)
 
 
 function dsfmt_gv_srand()

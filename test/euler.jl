@@ -21,6 +21,20 @@ function euler2(n)
 end
 @test euler2(4000000) == 4613732
 
+function Base.copy!(m::MersenneTwister, n::MersenneTwister)
+    m.idx = n.idx
+    resize!(m.seed, length(n.seed))
+    copy!(m.seed, n.seed)
+    copy!(m.state.val, n.state.val)
+    copy!(m.vals, n.vals)
+end
+
+
+
+#write(open("./RNG_RESTORE.jl", "w"), "copy!(Base.GLOBAL_RNG, $(Base.GLOBAL_RNG))")
+include("./RNG_RESTORE.jl")
+@test 1 == rand(Int)
+
 #4: 906609
 function euler4(n)
     m = 1
