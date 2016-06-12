@@ -129,17 +129,6 @@ function sqrmod!(f::GF2X, m::GF2X)
     # note: not slower that the non-allocating equivalent
     foldl(xor!, GF2X(coeff(f, 0)),
           sqrs[i] for i in filter(j->coeff(f, j)==1, 1:degree(f)))
-#=
-    empty!(_sqrmod_coeffs)
-    for i in 1:degree(f)
-        coeff(f, i) == 1 && push!(_sqrmod_coeffs, i)
-    end
-    ccall((:__gmpz_set_si, :libgmp), Void, (Ptr{BigInt}, Clong), &f.z, coeff(f, 0))
-    for i in _sqrmod_coeffs
-        @inbounds xor!(f, sqrs[i])
-    end
-    f
-    =#
 end
 
 function powxmod(e::BigInt, m::GF2X)
