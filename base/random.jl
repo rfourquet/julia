@@ -112,7 +112,10 @@ function srand(r::MersenneTwister, seed::Vector{UInt32})
 end
 
 # MersenneTwister jump
-function randjump(mt::MersenneTwister, jumps::Integer, jumppoly::AbstractString)
+randjump(mt::MersenneTwister, jumps::Integer, jumppoly::AbstractString) =
+    randjump(mt, jumps, dSFMT.GF2X(jumppoly))
+
+function randjump(mt::MersenneTwister, jumps::Integer, jumppoly::dSFMT.GF2X)
     mts = MersenneTwister[]
     push!(mts, mt)
     for i in 1:jumps-1
@@ -121,7 +124,9 @@ function randjump(mt::MersenneTwister, jumps::Integer, jumppoly::AbstractString)
     end
     return mts
 end
-randjump(r::MersenneTwister, jumps::Integer) = randjump(r, jumps, dSFMT.JPOLY1e21)
+
+randjump(r::MersenneTwister, jumps::Integer, steps::Integer=big(10)^20) =
+    randjump(r, jumps, dSFMT.get_jump(step))
 
 ## initialization
 
