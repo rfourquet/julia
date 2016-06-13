@@ -116,6 +116,7 @@ randjump(mt::MersenneTwister, jumps::Integer, jumppoly::AbstractString) =
     randjump(mt, jumps, dSFMT.GF2X(jumppoly))
 
 function randjump(mt::MersenneTwister, jumps::Integer, jumppoly::dSFMT.GF2X)
+    dSFMT.degree(jumppoly)
     mts = MersenneTwister[]
     push!(mts, mt)
     for i in 1:jumps-1
@@ -126,7 +127,8 @@ function randjump(mt::MersenneTwister, jumps::Integer, jumppoly::dSFMT.GF2X)
 end
 
 randjump(r::MersenneTwister, jumps::Integer, steps::Integer=big(10)^20) =
-    randjump(r, jumps, dSFMT.get_jump(step))
+    randjump(r, jumps, dSFMT.calc_jump(steps))
+
 
 ## initialization
 
