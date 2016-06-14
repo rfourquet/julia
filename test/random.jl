@@ -430,9 +430,17 @@ let seed = rand(UInt32, 10)
     @test s == r
 end
 
-# intialization
+# MersenneTwister initialization with invalid values
 @test_throws DomainError Base.dSFMT.DSFMT_state(zeros(Int32, rand(0:Base.dSFMT.JN32-1)))
 @test_throws DomainError MersenneTwister(zeros(UInt32, 1), Base.dSFMT.DSFMT_state(),
                                          zeros(Float64, 10), 0)
 @test_throws DomainError MersenneTwister(zeros(UInt32, 1), Base.dSFMT.DSFMT_state(),
                                          zeros(Float64, Base.Random.MTCacheLength), -1)
+
+# seed is private to MersenneTwister
+let seed = rand(UInt32, 10)
+    r = MersenneTwister(seed)
+    @test r.seed == seed && r.seed !== seed
+    resize!(seed, 4)
+    @test r.seed != seed
+end
