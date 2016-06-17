@@ -233,7 +233,8 @@ end
 
 ndigits0znb(n::Unsigned, b::Integer) = ndigits0znb(signed(n), b)
 
-function ndigits0z(n::Unsigned, b::Int)
+# The suffix "pb" stands for "positive base"
+function ndigits0zpb(n::Unsigned, b::Int)
     # precondition: b > 1
     d = 0
     b == 2  && return (sizeof(n)<<3-leading_zeros(n))
@@ -252,13 +253,22 @@ function ndigits0z(n::Unsigned, b::Int)
     return d
 end
 
-ndigits0z(x::Integer, b::Integer) = ndigits0z(unsigned(abs(x)), Int(b))
+ndigits0zpb(x::Integer, b::Integer) = ndigits0zpb(unsigned(abs(x)), Int(b))
 
-function ndigits(x::Integer, b::Integer)
+# The suffix "0z" means that the ouput is 0 on input zero (cf. #16841)
+"""
+    ndigits0z(n::Integer, b::Integer=10)
+
+Return 0 if `n == 0`, otherwise compute the number of digits in number
+`n` written in base `b`.
+"""
+ndigits0z(x::Integer, b::Integer) = ndigits(x, b, false)
+
+function ndigits(x::Integer, b::Integer, min1::Bool=true)
     if b < -1
-        x == 0 ? 1 : ndigits0znb(x, b)
+        x == 0 ? min1%Int : ndigits0znb(x, b)
     elseif b > 1
-        x == 0 ? 1 : ndigits0z(x, b)
+        x == 0 ? min1%Int : ndigits0zpb(x, b)
     else
         throw(DomainError())
     end
@@ -357,7 +367,7 @@ bits(x::Union{Int128,UInt128})            = bin(reinterpret(UInt128,x),128)
 digits{T<:Integer}(n::Integer, base::T=10, pad::Integer=1) = digits(T, n, base, pad)
 
 function digits{T<:Integer}(::Type{T}, n::Integer, base::Integer=10, pad::Integer=1)
-    digits!(zeros(T, max(pad, ndigits(n,base))), n, base)
+    digits!(zeros(T, max(pad, ndigits0z(n,base))), n, base)
 end
 
 function digits!{T<:Integer}(a::AbstractArray{T,1}, n::Integer, base::Integer=10)
