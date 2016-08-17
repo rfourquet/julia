@@ -525,7 +525,7 @@ function base(b::Integer, n::BigInt)
     unsafe_wrap(String, p, true)
 end
 
-function ndigits0zpb(x::BigInt, b::Integer=10)
+function ndigits0zpb(x::BigInt, b::Integer)
     b < 2 && throw(DomainError())
     x.size == 0 && return 0 # for consistency with other ndigits0z methods
     if ispow2(b) && 2 <= b <= 62 # GMP assumes b is in this range

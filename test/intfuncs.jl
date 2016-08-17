@@ -92,6 +92,11 @@ for b in -1:1
     @test_throws DomainError ndigits(rand(Int), b)
 end
 
+# test unsigned bases work
+@test ndigits(9, 0x2) = 4
+@test ndigits(0x9, 0x2) = 4
+
+
 @test bin(3) == "11"
 @test bin(3, 2) == "11"
 @test bin(3, 3) == "011"

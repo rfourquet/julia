@@ -278,9 +278,9 @@ ndigits_mismatch(n) = ndigits(n) != ndigits(BigInt(n))
 ndigits(big(rand(Int)), rand(63:typemax(Int)))
 ndigits(big(rand(Int)), big(2)^rand(2:999))
 
-for i in big([-20:-1;1:20; rand(Int)])
-    for b in -10:1
-        @test_throws DomainError ndigits(i, b)
+for x in big([-20:20; rand(Int)])
+    for b in -1:1
+        @test_throws DomainError ndigits(x, b)
     end
 end
 
