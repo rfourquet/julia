@@ -385,6 +385,19 @@ function isupper(c::Char)
 end
 
 """
+    iscased(c::Char) -> Bool
+
+Tests whether a character is cased, i.e. is lower-, upper- or title-cased.
+"""
+function iscased(c::Char)
+    cat = category_code(c)
+    return cat == UTF8PROC_CATEGORY_LU ||
+           cat == UTF8PROC_CATEGORY_LT ||
+           cat == UTF8PROC_CATEGORY_LL
+end
+
+
+"""
     isdigit(c::Char) -> Bool
 
 Tests whether a character is a decimal digit (0-9).
@@ -666,11 +679,11 @@ julia> titlecase("ISS - international space station", strict=false)
 "ISS - International Space Station"
 ```
 """
-function titlecase(s::AbstractString; strict::Bool=true)
+function titlecase(s::AbstractString; wordsep::Function = !iscased, strict::Bool=true)
     startword = true
     b = IOBuffer()
     for c in s
-        if isspace(c)
+        if wordsep(c)
             print(b, c)
             startword = true
         else
