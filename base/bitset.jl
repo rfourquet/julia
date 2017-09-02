@@ -236,7 +236,6 @@ isempty(s::BitSet) = _check0(s.bits, 1, length(s.bits))
 # Mathematical set functions: union!, intersect!, setdiff!, symdiff!
 
 union(s::BitSet, sets...) = union!(copy(s), sets...)
-union!(s::BitSet, ns) = foldl(push!, s, ns)
 union!(s1::BitSet, s2::BitSet) = _matched_map!(|, s1, s2)
 
 intersect(s1::BitSet, s2::BitSet) =

@@ -94,14 +94,22 @@ julia> union([4, 2], [1, 2])
 """
 function union end
 
-union(s::Set, sets...) = union!(Set{join_eltype(s, sets...)}(), s, sets...)
+empty(s::Set, ::Type{U}) where {U} = similar(s, U)
+empty(s::IntSet, ::Type) = similar(s)
+empty(s::AbstractVector, ::Type{U}) where {U} = similar(s, U, 0)
+empty(s, ::Type{U}) where {U} = Vector{U}(0)
+_in(itr) = x -> x in itr
+
+union(s, sets...) = union!(empty(s, promote_eltype(s, sets...)), s, sets...)
+union(s::AbstractSet) = copy(s) # remove when method above becomes as efficient
 
 const ∪ = union
 
 """
-    union!(s::AbstractSet, itrs...)
+    union!(s::Union{AbstractSet,AbstractVector}, itrs...)
 
 Construct the union of passed in sets and overwrite `s` with the result.
+Maintain order with arrays.
 
 # Examples
 ```jldoctest
@@ -123,16 +131,15 @@ function union!(s::Set{T}, itr) where T
 end
 
 union!(s::AbstractSet, sets...) = foldl(union!, s, sets)
-
-join_eltype() = Bottom
-join_eltype(v1, vs...) = typejoin(eltype(v1), join_eltype(vs...))
+# default generic implementation with push!
+union!(s::AbstractSet, itr) = foldl(push!, s, itr)
 
 """
     intersect(s, itrs...)
     ∩(s, itrs...)
 
 Construct the intersection of sets.
-Maintain order and multiplicity of the first argument for arrays and ranges.
+Maintain order with arrays.
 
 # Examples
 ```jldoctest
@@ -143,24 +150,24 @@ julia> intersect([1, 2, 3], [3, 4, 5])
 julia> intersect([1, 4, 4, 5, 6], [4, 6, 6, 7, 8])
 3-element Array{Int64,1}:
  4
- 4
  6
 ```
 """
 function intersect end
 
-intersect(s) = copy(s)
-intersect(s::AbstractSet, itr) = mapfilter(x->in(x, s), push!, itr, similar(s))
+intersect(s) = union(s)
+intersect(s::AbstractSet, itr) = mapfilter(_in(s), push!, itr, similar(s))
 intersect(s::AbstractSet, itr, itrs...) = intersect!(intersect(s, itr), itrs...)
 
 const ∩ = intersect
 
 """
-    intersect!(s::AbstractSet, itrs...)
+    intersect!(s::Union{AbstractSet,AbstractVector}, itrs...)
 
 Intersect all passed in sets and overwrite `s` with the result.
+Maintain order with arrays.
 """
-intersect!(s::AbstractSet, s2::AbstractSet) = filter!(x -> x in s2, s)
+intersect!(s::AbstractSet, s2::AbstractSet) = filter!(_in(s2), s)
 intersect!(s::AbstractSet, itr) = intersect!(s, union!(similar(s), itr))
 intersect!(s::AbstractSet, itrs...) = foldl(intersect!, s, itrs)
 
@@ -179,12 +186,13 @@ julia> setdiff([1,2,3], [3,4,5])
 ```
 """
 setdiff(s::AbstractSet, itrs...) = setdiff!(copy(s), itrs...)
-setdiff(s) = copy(s)
+setdiff(s) = union(s)
 
 """
     setdiff!(s, itrs...)
 
 Remove from set `s` (in-place) each element of each iterable from `itrs`.
+Maintain order with arrays.
 
 # Examples
 ```jldoctest
@@ -204,7 +212,8 @@ setdiff!(s::AbstractSet, itr) = foldl(delete!, s, itr)
     symdiff(s, itrs...)
 
 Construct the symmetric difference of elements in the passed in sets.
-Maintains order with arrays.
+When `s` is not an `AbstractSet`, the order is maintained.
+Note that in this case the multiplicity of elements matters.
 
 # Examples
 ```jldoctest
@@ -213,15 +222,25 @@ julia> symdiff([1,2,3], [3,4,5], [4,5,6])
  1
  2
  6
+
+julia> symdiff([1,2,1], [2, 1, 2])
+2-element Array{Int64,1}:
+ 1
+ 2
+
+julia> symdiff(unique([1,2,1]), unique([2, 1, 2]))
+0-element Array{Int64,1}
 ```
 """
-symdiff(s::AbstractSet, sets...) = symdiff!(copy(s), sets...)
-symdiff(s) = copy(s) # remove when method above becomes as efficient
+symdiff(s, sets...) = symdiff!(empty(s, promote_eltype(s, sets...)), s, sets...)
+symdiff(s) = symdiff!(copy(s)) # remove when method above becomes as efficient
 
 """
-    symdiff!(s::AbstractSet, itrs...)
+    symdiff!(s::Union{AbstractSet,AbstractVector}, itrs...)
 
 Construct the symmetric difference of the passed in sets, and overwrite `s` with the result.
+When `s` is an array, the order is maintained.
+Note that in this case the multiplicity of elements matters.
 """
 symdiff!(s::AbstractSet, itrs...) = foldl(symdiff!, s, itrs)
 
@@ -253,7 +272,7 @@ julia> issubset([1, 2, 3], [1, 2])
 false
 ```
 """
-issubset(l, r) = all(x -> x in r, l)
+issubset(l, r) = all(_in(r), l)
 const ⊆ = issubset
 ⊊(l::Set, r::Set) = <(l, r)
 ⊈(l::Set, r::Set) = !⊆(l, r)

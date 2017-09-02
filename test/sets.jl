@@ -157,14 +157,14 @@ end
 end
 
 @testset "union" begin
-    for S in (Set, BitSet)
+    for S in (Set, BitSet, Vector)
         s = ∪(S([1,2]), S([3,4]))
-        @test isequal(s, S([1,2,3,4]))
+        @test s == S([1,2,3,4])
         s = union(S([5,6,7,8]), S([7,8,9]))
-        @test isequal(s, S([5,6,7,8,9]))
+        @test s == S([5,6,7,8,9])
         s = S([1,3,5,7])
-        union!(s,(2,3,4,5))
-        @test isequal(s,S([1,2,3,4,5,7]))
+        union!(s, (2,3,4,5))
+        @test s == S([1,3,5,7,2,4]) # order matters for Vector
         let s1 = S([1, 2, 3])
             @test s1 !== union(s1) == s1
             @test s1 !== union(s1, 2:4) == S([1,2,3,4])
@@ -173,17 +173,21 @@ end
             @test s1 === union!(s1, [2,3,4], S([5])) == S([1,2,3,4,5])
         end
     end
-    @test typeof(union(Set([1]), BitSet())) === Set{Int}
-    @test typeof(union(BitSet([1]), Set())) === BitSet
+    @test union(Set([1]), IntSet()) isa Set{Int}
+    @test union(IntSet([1]), Set()) isa IntSet
+    @test union([1], IntSet()) isa Vector{Int}
+    # union must uniquify
+    @test union([1, 2, 1]) == union!([1, 2, 1]) == [1, 2]
+    @test union([1, 2, 1], [2, 2]) == union!([1, 2, 1], [2, 2]) == [1, 2]
 end
 
 @testset "intersect" begin
-    for S in (Set, BitSet)
-        s = ∩(S([1,2]), S([3,4]))
-        @test isequal(s, S())
+    for S in (Set, BitSet, Vector)
+        s = S([1,2]) ∩ S([3,4])
+        @test s == S()
         s = intersect(S([5,6,7,8]), S([7,8,9]))
-        @test isequal(s, S([7,8]))
-        @test isequal(intersect(S([2,3,1]), S([4,2,3]), S([5,4,3,2])), S([2,3]))
+        @test s == S([7,8])
+        @test intersect(S([2,3,1]), S([4,2,3]), S([5,4,3,2])) == S([2,3])
         let s1 = S([1,2,3])
             @test s1 !== intersect(s1) == s1
             @test s1 !== intersect(s1, 2:10) == S([2,3])
@@ -192,18 +196,22 @@ end
             @test s1 === intersect!(s1, [2,3,4], 3:4) == S([3])
         end
     end
-    @test typeof(intersect(Set([1]), BitSet())) === Set{Int}
-    @test typeof(intersect(BitSet([1]), Set())) === BitSet
+    @test intersect(Set([1]), IntSet()) isa Set{Int}
+    @test intersect(IntSet([1]), Set()) isa IntSet
+    @test intersect([1], IntSet()) isa Vector{Int}
+    # intersect must uniquify
+    @test intersect([1, 2, 1]) == intersect!([1, 2, 1]) == [1, 2]
+    @test intersect([1, 2, 1], [2, 2]) == intersect!([1, 2, 1], [2, 2]) == [2]
 end
 
 @testset "setdiff" begin
-    for S in (Set, BitSet)
-        @test isequal(setdiff(S([1,2,3]), S()),        S([1,2,3]))
-        @test isequal(setdiff(S([1,2,3]), S([1])),     S([2,3]))
-        @test isequal(setdiff(S([1,2,3]), S([1,2])),   S([3]))
-        @test isequal(setdiff(S([1,2,3]), S([1,2,3])), S())
-        @test isequal(setdiff(S([1,2,3]), S([4])),     S([1,2,3]))
-        @test isequal(setdiff(S([1,2,3]), S([4,1])),   S([2,3]))
+    for S in (Set, IntSet, Vector)
+        @test setdiff(S([1,2,3]), S())        == S([1,2,3])
+        @test setdiff(S([1,2,3]), S([1]))     == S([2,3])
+        @test setdiff(S([1,2,3]), S([1,2]))   == S([3])
+        @test setdiff(S([1,2,3]), S([1,2,3])) == S()
+        @test setdiff(S([1,2,3]), S([4]))     == S([1,2,3])
+        @test setdiff(S([1,2,3]), S([4,1]))   == S([2,3])
         let s1 = S([1, 2, 3])
             @test s1 !== setdiff(s1) == s1
             @test s1 !== setdiff(s1, 2:10) == S([1])
@@ -211,10 +219,13 @@ end
             @test s1 !== setdiff(s1, S([2,3,4]), S([1])) == S()
             @test s1 === setdiff!(s1, S([2,3,4]), S([1])) == S()
         end
+        @test setdiff(Set([1]), IntSet()) isa Set{Int}
+        @test setdiff(IntSet([1]), Set()) isa IntSet
+        @test setdiff([1], IntSet()) isa Vector{Int}
+        # setdiff must uniquify
+        @test setdiff([1, 2, 1]) == setdiff!([1, 2, 1]) == [1, 2]
+        @test setdiff([1, 2, 1], [2, 2]) == setdiff!([1, 2, 1], [2, 2]) == [1]
     end
-    @test typeof(setdiff(Set([1]), BitSet())) === Set{Int}
-    @test typeof(setdiff(BitSet([1]), Set())) === BitSet
-
     s = Set([1,3,5,7])
     setdiff!(s,(3,5))
     @test isequal(s,Set([1,7]))
@@ -240,7 +251,7 @@ end
 end
 
 @testset "issubset, symdiff" begin
-    for S in (Set, BitSet)
+    for S in (Set, IntSet, Vector)
         for (l,r) in ((S([1,2]),     S([3,4])),
                       (S([5,6,7,8]), S([7,8,9])),
                       (S([1,2]),     S([3,4])),
@@ -255,32 +266,44 @@ end
             @test issubset(intersect(l,r), r)
             @test issubset(l, union(l,r))
             @test issubset(r, union(l,r))
-            @test isequal(union(intersect(l,r),symdiff(l,r)), union(l,r))
+            if S === Vector
+                @test sort(union(intersect(l,r),symdiff(l,r))) == sort(union(l,r))
+            else
+                @test union(intersect(l,r),symdiff(l,r)) == union(l,r)
+            end
         end
-        @test ⊆(S([1]), S([1,2]))
-        @test ⊊(S([1]), S([1,2]))
-        @test !⊊(S([1]), S([1]))
-        @test ⊈(S([1]), S([2]))
-        @test ⊇(S([1,2]), S([1]))
-        @test ⊋(S([1,2]), S([1]))
-        @test !⊋(S([1]), S([1]))
-        @test ⊉(S([1]), S([2]))
+        if S !== Vector
+            @test ⊆(S([1]), S([1,2]))
+            @test ⊊(S([1]), S([1,2]))
+            @test !⊊(S([1]), S([1]))
+            @test ⊈(S([1]), S([2]))
+            @test ⊇(S([1,2]), S([1]))
+            @test ⊋(S([1,2]), S([1]))
+            @test !⊋(S([1]), S([1]))
+            @test ⊉(S([1]), S([2]))
+        end
         let s1 = S([1,2,3,4])
             @test s1 !== symdiff(s1) == s1
             @test s1 !== symdiff(s1, S([2,4,5,6])) == S([1,3,5,6])
             @test s1 !== symdiff(s1, S([2,4,5,6]), [1,6,7]) == S([3,5,7])
             @test s1 === symdiff!(s1, S([2,4,5,6]), [1,6,7]) == S([3,5,7])
         end
+        @test ⊆(Set([1]), Set([1,2]))
+        @test ⊊(Set([1]), Set([1,2]))
+        @test !⊊(Set([1]), Set([1]))
+        @test ⊈(Set([1]), Set([2]))
+        @test ⊇(Set([1,2]), Set([1]))
+        @test ⊋(Set([1,2]), Set([1]))
+        @test !⊋(Set([1]), Set([1]))
+        @test ⊉(Set([1]), Set([2]))
+        @test symdiff(Set([1,2,3,4]), Set([2,4,5,6])) == Set([1,3,5,6])
     end
-    @test ⊆(Set([1]), Set([1,2]))
-    @test ⊊(Set([1]), Set([1,2]))
-    @test !⊊(Set([1]), Set([1]))
-    @test ⊈(Set([1]), Set([2]))
-    @test ⊇(Set([1,2]), Set([1]))
-    @test ⊋(Set([1,2]), Set([1]))
-    @test !⊋(Set([1]), Set([1]))
-    @test ⊉(Set([1]), Set([2]))
-    @test symdiff(Set([1,2,3,4]), Set([2,4,5,6])) == Set([1,3,5,6])
+    @test symdiff(Set([1]), IntSet()) isa Set{Int}
+    @test symdiff(IntSet([1]), Set()) isa IntSet
+    @test symdiff([1], IntSet()) isa Vector{Int}
+    # symdiff must NOT uniquify
+    @test symdiff([1, 2, 1]) == symdiff!([1, 2, 1]) == [2]
+    @test symdiff([1, 2, 1], [2, 2]) == symdiff!([1, 2, 1], [2, 2]) == [2]
 end
 
 @testset "unique" begin
