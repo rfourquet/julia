@@ -964,12 +964,20 @@ function testset_beginend(args, tests, source)
         # which is needed for backtrace scrubbing to work correctly.
         while false; end
         push_testset(ts)
+        # we reproduce the logic of guardsrand, but this function
+        # cannot be used as it changes slightly the semantic of @testset,
+        # by wrapping the body in a function
+        oldrng = copy(Base.GLOBAL_RNG)
         try
+            # GLOBAL_RNG is re-seeded with its own seed to ease reproduce a failed test
+            srand(Base.GLOBAL_RNG.seed)
             $(esc(tests))
         catch err
             # something in the test block threw an error. Count that as an
             # error in this test set
             record(ts, Error(:nontest_error, :(), err, catch_backtrace(), $(QuoteNode(source))))
+        finally
+            copy!(Base.GLOBAL_RNG, oldrng)
         end
         pop_testset()
         finish(ts)
@@ -1030,12 +1038,16 @@ function testset_forloop(args, testloop, source)
         ts = $(testsettype)($desc; $options...)
         push_testset(ts)
         first_iteration = false
+        oldrng = copy(Base.GLOBAL_RNG)
         try
+            srand(Base.GLOBAL_RNG.seed)
             $(esc(tests))
         catch err
             # Something in the test block threw an error. Count that as an
             # error in this test set
             record(ts, Error(:nontest_error, :(), err, catch_backtrace(), $(QuoteNode(source))))
+        finally
+            copy!(Base.GLOBAL_RNG, oldrng)
         end
     end
     quote
@@ -1477,7 +1489,7 @@ end
 
 "`guardsrand(f, seed)` is equivalent to running `srand(seed); f()` and
 then restoring the state of the global RNG as it was before."
-guardsrand(f::Function, seed::Integer) = guardsrand() do
+guardsrand(f::Function, seed::Union{Vector{UInt32},Integer}) = guardsrand() do
     srand(seed)
     f()
 end
