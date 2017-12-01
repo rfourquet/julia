@@ -490,12 +490,6 @@ export
     prod!,
     prod,
     promote_shape,
-    randcycle,
-    randcycle!,
-    randperm,
-    randperm!,
-    randsubseq!,
-    randsubseq,
     range,
     reducedim,
     repmat,
@@ -744,7 +738,6 @@ export
     print_shortest,
     print_with_color,
     println,
-    randstring,
     repeat,
     replace,
     repr,
@@ -771,17 +764,9 @@ export
 
 # random numbers
     AbstractRNG,
-    MersenneTwister,
-    RandomDevice,
     rand!,
     rand,
-    randn!,
-    randn,
-    randexp!,
-    randexp,
     srand,
-    bitrand,
-    randjump,
 
 # bigfloat & precision
     precision,
