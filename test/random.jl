@@ -691,3 +691,44 @@ end
     @test rand(Uniform(1:10)) ∈ 1:10
     @test rand(Uniform(Int)) isa Int
 end
+
+@testset "Containers" for rng in ([], [MersenneTwister(0)], [RandomDevice()])
+
+    for s = (rand(rng..., 1:99, Set{Int}, 10),
+             rand(rng..., 1:99, Set, 10))
+        @test s isa Set{Int}
+        @test length(s) == 10
+        @test rand(s) ∈ 1:99
+    end
+    for s = (rand(rng..., Combine(Pair, 1:99, 1:99), Dict, 10),
+             rand(rng..., Combine(Pair, 1:99, 1:99), Dict{Int,Int}, 10))
+        @test s isa Dict{Int,Int}
+        @test length(s) == 10
+        p = rand(s)
+        @test p.first ∈ 1:99
+        @test p.second ∈ 1:99
+    end
+    @test rand(rng..., Float64, .5, 10) isa SparseVector{Float64}
+    @test rand(rng..., .5, 10) isa SparseVector{Float64}
+    @test rand(rng..., Int, .5, 10) isa SparseVector{Int}
+    @test rand(rng..., Float64, .5, 10, 3) isa SparseMatrixCSC{Float64}
+    @test rand(rng..., .5, 10, 3) isa SparseMatrixCSC{Float64}
+    @test rand(rng..., Int, .5, 10, 3) isa SparseMatrixCSC{Int}
+
+    @test rand(rng..., BitArray, 10) isa BitVector
+    @test rand(rng..., BitVector, 10) isa BitVector
+    @test_throws MethodError rand(rng..., BitVector, 10, 20) isa BitVector
+    @test rand(rng..., BitArray, 10, 3) isa BitMatrix
+    @test rand(rng..., BitMatrix, 10, 3) isa BitMatrix
+    @test_throws MethodError rand(rng..., BitVector, 10, 3) isa BitMatrix
+
+    s = rand(rng..., String)
+    @test s isa String
+    @test length(s) == 8
+    s = rand(rng..., String, 10)
+    @test s isa String
+    @test length(s) == 10
+    s = rand(rng..., "asd", String)
+    @test length(s) == 8
+    @test Set(s) <= Set("asd")
+end
