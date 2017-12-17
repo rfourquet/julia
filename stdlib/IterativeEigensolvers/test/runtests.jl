@@ -96,7 +96,7 @@ using Test
     end
 
     @testset "Symmetric generalized with singular B" begin
-        srand(124)
+        srand(127)
         n = 10
         k = 3
         A = randn(n,n); A = A'A
